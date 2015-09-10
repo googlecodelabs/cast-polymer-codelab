@@ -1,0 +1,21 @@
+/**
+Minimum width 1110 - 1359 specific css
+*/
+.video-width {
+  width: 944px;
+  margin: 40px auto;
+}
+
+.video-height {
+  height: 531px;
+}
+
+.width {
+  width: 100%;
+}
+
+.carousel-width {
+  width: 1110px;
+  margin: 0 auto;
+  display: block;
+}

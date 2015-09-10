@@ -1,0 +1,56 @@
+<link rel="import" href="../bower_components/polymer/polymer.html">
+
+<link rel="import" href="../bower_components/cast-theme-polymer/cast-theme.html">
+
+<!--
+Represents the currently playing media details.  Displays mediaStatus.localMedia.title,studio and
+description.
+-->
+<dom-module id="video-details">
+  <style>
+    :host {
+      width: 100%;
+      display: block;
+      position: relative;
+      color: var(--video-details-text-color);
+      @apply(--paper-font-base);
+      @apply(local)
+    }
+
+    p {
+      margin: 10px 20px;
+      @apply(--font-base-100);
+    }
+
+    #title {
+      @apply(--font-base-400-large);
+      margin-right: 20px;
+    }
+
+    #sub_title {
+      @apply(--font-base-100-large);
+    }
+  </style>
+  <template>
+    <p>
+      <span id="title">[[ localMedia.title ]]</span>
+      <span id="sub_title">[[ localMedia.studio ]]</span>
+    </p>
+    <p id="description"></p>
+  </template>
+  <script>
+    Polymer({
+      is: 'video-details',
+      properties: {
+        localMedia: {
+          type: Object,
+          observer: '_localMediaObserver'
+        }
+      },
+      _localMediaObserver: function (newVal, oldVal) {
+        //Using inner html since filling the text in the template doesn't html decode entities.
+        this.$.description.innerHTML = this.localMedia.description;
+      }
+    });
+  </script>
+</dom-module>

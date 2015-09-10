@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  <script src="bower_components/webcomponentsjs/webcomponents-lite.min.js"></script>
+  <link rel="import" href="bower_components/iron-flex-layout/classes/iron-flex-layout.html">
+
+  <link rel="import" href="elements/video-carousel.html">
+  <link rel="import" href="elements/video-details.html">
+
+  <link rel="stylesheet" href="css/common.css">
+  <link rel="stylesheet" media="only screen and (max-width: 1109px)"
+        href="css/max-1110-styles.css">
+  <link rel="stylesheet" media="only screen and (min-width: 1110px) and (max-width: 1359px)"
+        href="css/mw-1110-styles.css">
+  <link rel="stylesheet" media="only screen and (min-width: 1360px) and (max-width: 1599px)"
+        href="css/mw-1360-styles.css">
+  <link rel="stylesheet" media="only screen and (min-width: 1600px)"
+        href="css/mw-1600-styles.css">
+
+  <meta charset="UTF-8">
+  <title>Cast Videos</title>
+
+  <script>
+    var ROOT = '//commondatastorage.googleapis.com/gtv-videos-bucket/sample/';
+    var mediaList;
+    var mediaArray;
+    var castManager;
+    var carousel;
+    var castQueue;
+    var castBar;
+    var castVideo;
+
+    // Create the XHR object.
+    function createCORSRequest(method, url) {
+      var xhr = new XMLHttpRequest();
+      if ("withCredentials" in xhr) {
+        // XHR for Chrome/Firefox/Opera/Safari.
+        xhr.open(method, url, true);
+      } else if (typeof XDomainRequest != "undefined") {
+        // XDomainRequest for IE.
+        xhr = new XDomainRequest();
+        xhr.open(method, url);
+      } else {
+        // CORS not supported.
+        xhr = null;
+      }
+      return xhr;
+    }
+
+    function makeCorsRequest() {
+      var url = ROOT + 'd.json';
+      var xhr = createCORSRequest('GET', url);
+      if (!xhr) {
+        alert('CORS not supported');
+        return;
+      }
+      // Response handlers.
+      xhr.onload = function () {
+        var content = JSON.parse(xhr.responseText);
+        mediaList = processMediaList(content);
+      };
+
+      xhr.onerror = function () {
+        alert('Woops, there was an error making the request.');
+      };
+      xhr.send();
+    }
+
+    function processMediaList(content) {
+      var mediaList = {};
+      mediaArray = [];
+      var contentArray = content.categories[0].videos;
+      for (var i = 0; i < contentArray.length; i++) {
+        var title = contentArray[i].title.replace(/\s+/g, '-').toLowerCase();
+        mediaList[title] = new cast.MediaItem({
+          'title': contentArray[i].title,
+          'description': contentArray[i].subtitle,
+          'url': contentArray[i].sources[0],
+          'studio': contentArray[i].studio,
+          'thumbnailImageUrl': ROOT + contentArray[i]['image-480x270'],
+          'largeImageUrl': ROOT + contentArray[i]['image-780x1200']
+        });
+        mediaArray.push(mediaList[title]);
+      }
+      return mediaList;
+    }
+
+    makeCorsRequest();
+  </script>
+</head>
+<body class="fullbleed layout vertical" id="body">
+
+<template id="t" is="dom-bind">
+</template>
+
+</body>
+<script>
+  var t = document.querySelector('#t');
+  t.addEventListener('dom-change', function () {
+  });
+</script>
+</body>
+</html>

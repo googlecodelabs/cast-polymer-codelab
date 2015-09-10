@@ -1,0 +1,25 @@
+/**
+Minimum width 1600 specific css
+*/
+.video-width {
+  width: 1184px;
+  margin: 40px auto;
+}
+
+.video-height {
+  height: 666px;
+}
+
+.width {
+  width: 1600px;
+}
+
+.video-content {
+  min-height: 900px;
+}
+
+.carousel-width {
+  width: 100%;
+  margin: 0 auto;
+  display: block;
+}

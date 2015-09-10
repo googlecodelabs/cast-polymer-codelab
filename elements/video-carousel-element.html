@@ -1,0 +1,260 @@
+<link rel="import" href="../bower_components/polymer/polymer.html">
+
+<link rel="import" href="../bower_components/cast-theme-polymer/cast-theme.html">
+<link rel="import" href="../bower_components/paper-ripple/paper-ripple.html">
+
+<link rel="import" href="../bower_components/paper-menu-button/paper-menu-button.html">
+<link rel="import" href="../bower_components/paper-icon-button/paper-icon-button.html">
+<link rel="import" href="../bower_components/paper-menu/paper-menu.html">
+<link rel="import" href="../bower_components/paper-item/paper-item.html">
+<link rel="import" href="../bower_components/iron-icons/iron-icons.html">
+<link rel="import" href="../bower_components/iron-icons/av-icons.html">
+<link rel="import" href="../bower_components/cast-manager-polymer/helper-behavior.html">
+
+<!--
+`video-carousel-element` creates the element to display each media item.  The element includes
+a thumbnail image of the video, title and subtitle and a more options button.
+
+Clicking on the element will call enqueue the media item to play immediately.  The option button
+allows the user to select play now, play next, or add to queue.
+
+The element requires a media item to display and the currently loaded media to determine
+if the element matches.  If the currently loaded media and media item url are the same.  This
+element is filled with a highlight color to indicate that it's currently selected.
+
+Example
+
+    <template is="dom-repeat" items="[[queue.items]]">
+      <video-carousel-element media="[[item]]"
+                              local-media="[[localMedia]]"></video-carousel-element>
+    </template>
+
+### Styling
+
+The following custom properties are available for styling:
+----------------|-------------|----------
+`--background-color` | Theme background color | `#FFFFFF`
+`--paper-font-base` | Theme font | `Roboto`
+`--selected-color` | Theme theme selected color | `#4F7DC9`
+-->
+<dom-module id="video-carousel-element">
+  <style>
+    :host {
+      height: 220px;
+      max-height: 220px;
+      width: 220px;
+      overflow: visible;
+      position: relative;
+      background-color: var(--background-color, #FFFFFF);
+      padding: 2px 2px 2px 2px;
+      color: var(--text-color,#000000);
+      cursor: pointer;
+      visibility: hidden;
+      display: inline-block;
+
+    --paper-item: {
+        white-space: nowrap;
+      };
+
+      @apply (--paper-font-base);
+    }
+
+    :host(.selected) {
+      background-color: var(--selected-color, #4F7DC9);
+      color: var(--selected-text-color, #FFFFFF);
+    }
+
+    #thumbnail {
+      width: 220px;
+      height: 124px;
+      @apply(--thumbnail);
+      @apply(--flex-center);
+    }
+
+    p {
+      margin-left: 10px;
+      margin-top: 10px;
+      margin-bottom: 10px;
+    }
+
+    .studio {
+      @apply(--font-base-100);
+    }
+
+    .title {
+      @apply(--font-base-400);
+    }
+
+    paper-menu-button#menu_button.right-menu {
+      position: absolute;
+      bottom: 0;
+      right: 0;
+      margin-right: 5px;
+      margin-bottom: 5px;
+      color: black;
+      padding: 0;
+    }
+
+    paper-icon-button {
+       --iron-icon-height:30px;
+       --iron-icon-width:30px;
+    }
+
+    #play.hidden {
+      opacity: 0;
+      filter: alpha(opacity=0);
+    }
+
+    #play {
+      opacity: .8;
+      filter: alpha(opacity=80);
+      width: 100px;
+      height: 100px;
+      fill: var(--icon-fill-color, #FFFFFF);
+      display: block;
+      @apply(--transition-base-300);
+    }
+
+    .container {
+      width: 100%;
+      height: 100%;
+    }
+
+  </style>
+  <template>
+
+    <!-- Container prevents the ripple from triggering when the menu button is clicked-->
+    <div class="container">
+      <div id="thumbnail">
+        <iron-icon id="play" icon="av:play-arrow" class="hidden"></iron-icon>
+      </div>
+      <p class="title">[[ media.title ]]</p>
+
+      <p class="studio">[[ media.studio ]]</p>
+      <paper-ripple></paper-ripple>
+    </div>
+
+    <paper-menu-button id="menu_button" class="right-menu"
+                       vertical-align="bottom"
+                       horizontal-align="right">
+      <paper-icon-button icon="more-vert" class="dropdown-trigger"></paper-icon-button>
+      <paper-menu id="menu" class="dropdown-content">
+        <paper-item id="play_now" on-click="_playNow">Play now</paper-item>
+        <paper-item id="play_next" on-click="_playNext">Play next</paper-item>
+        <paper-item id="add_to_queue" on-click="_addToQueue">Add to queue</paper-item>
+      </paper-menu>
+    </paper-menu-button>
+  </template>
+</dom-module>
+
+<script>
+  Polymer({
+    is: 'video-carousel-element',
+    properties: {
+      /**
+       * Media item to display.
+       */
+      media: Object,
+
+      /**
+       * Currently loaded local media.
+       *
+       * Used to determine if this element needs to be highlighted.
+       */
+      localMedia: Object
+    },
+    observers: [
+      '_mediaObserver(media)',
+      '_localMediaObserver(localMedia)'
+    ],
+    behaviors: [
+        cast.HelperBehavior
+    ],
+    ready: function () {
+      //If media is defined, show the element
+      if (this.media) {
+        this.style.visibility = 'visible';
+      }
+
+      //Handle mouse over to indicate that clicking will play the video
+      this.addEventListener('mouseenter', function () {
+        this.$.play.classList.remove('hidden');
+      });
+      this.addEventListener('mouseout', function () {
+        this.$.play.classList.add('hidden');
+      });
+
+      this.addEventListener('click', function (event) {
+        this._playNow(event);
+      });
+
+      //Handle clicks for menu buttons
+      this.$.menu_button.addEventListener('click', function (event) {
+        event.stopPropagation();
+      });
+    },
+
+    /**
+     * Play the media item immediately
+     *
+     * @private
+     */
+    _playNow: function(event) {
+      this._queueAddAsCurrentItem(this.media);
+      this.$.menu.select(null);
+      event.stopPropagation();
+    },
+
+    /**
+     * Play the media item after the current one completes
+     *
+     * @private
+     */
+    _playNext: function(event) {
+      this._queueAddAsNextItem(this.media);
+      this.$.menu.select(null);
+      event.stopPropagation();
+    },
+
+    /**
+     * Add the media item to the end of the queue
+     * @private
+     */
+    _addToQueue: function(event) {
+      this._queueAddItemsToQueue([this.media]);
+      this.$.menu.select(null);
+      event.stopPropagation();
+    },
+
+    /**
+     * Updates the element with new media content
+     *
+     * @param newVal
+     * @private
+     */
+    _mediaObserver: function (newVal) {
+      if (newVal) {
+        this.$.thumbnail.style.backgroundImage = "url('" + newVal.thumbnailImageUrl + "')";
+        this.style.visibility = 'vis4ible';
+      } else {
+        this.style.visibility = 'hidden';
+      }
+
+    },
+
+    /**
+     * Observes local media and highlights this element when local media matches
+     * this item
+     *
+     * @param newVal
+     * @private
+     */
+    _localMediaObserver: function (newVal) {
+      if (newVal && this.media && newVal.url === this.media.url) {
+        this.classList.add('selected');
+      } else {
+        this.classList.remove('selected');
+      }
+    }
+  });
+</script>

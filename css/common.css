@@ -1,0 +1,67 @@
+body {
+  background-color: #aeaeae;
+}
+
+.paper-header {
+  background: #4F7DC9;
+  height: 71px;
+}
+
+.video-content {
+  background: #1b1b1b; /* Old browsers */
+  background: -moz-linear-gradient(top, #1b1b1b 0%, #3f3f3f 100%); /* FF3.6+ */
+  background: -webkit-gradient(linear, left top, left bottom, color-stop(0%, #1b1b1b), color-stop(100%, #3f3f3f)); /* Chrome,Safari4+ */
+  background: -webkit-linear-gradient(top, #1b1b1b 0%, #3f3f3f 100%); /* Chrome10+,Safari5.1+ */
+  background: -o-linear-gradient(top, #1b1b1b 0%, #3f3f3f 100%); /* Opera 11.10+ */
+  background: -ms-linear-gradient(top, #1b1b1b 0%, #3f3f3f 100%); /* IE10+ */
+  background: linear-gradient(to bottom, #1b1b1b 0%, #3f3f3f 100%); /* W3C */
+}
+
+.paper-header img {
+  margin-left: 20px;
+}
+
+.video-content {
+  padding-top: 20px;
+  padding-bottom: 20px;
+  background-color: #ffffff;
+}
+
+.shadow {
+  box-shadow: 0 6px 18px -1px rgba(0, 0, 0, 0.88);
+}
+
+video-details {
+  margin-bottom: 20px;
+}
+
+.center-box-shadow {
+  margin: 0 auto;
+  position: relative;
+  overflow: hidden;
+  box-shadow: 0 6px 18px -1px rgba(0, 0, 0, 0.88);
+}
+
+.bgcolor {
+  background-color: #eaeaea;
+}
+
+.full-width {
+  width: 100%;
+}
+
+#footer {
+  margin-top: 20px;
+  height: 41px;
+  background: #1b1b1b; /* Old browsers */
+  background: -moz-linear-gradient(top, #1b1b1b 0%, #3f3f3f 100%); /* FF3.6+ */
+  background: -webkit-gradient(linear, left top, left bottom, color-stop(0%, #1b1b1b), color-stop(100%, #3f3f3f)); /* Chrome,Safari4+ */
+  background: -webkit-linear-gradient(top, #1b1b1b 0%, #3f3f3f 100%); /* Chrome10+,Safari5.1+ */
+  background: -o-linear-gradient(top, #1b1b1b 0%, #3f3f3f 100%); /* Opera 11.10+ */
+  background: -ms-linear-gradient(top, #1b1b1b 0%, #3f3f3f 100%); /* IE10+ */
+  background: linear-gradient(to bottom, #1b1b1b 0%, #3f3f3f 100%); /* W3C */
+}
+
+.min-height {
+  min-height: 1500px;
+}

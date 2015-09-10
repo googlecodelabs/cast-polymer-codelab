@@ -1,0 +1,22 @@
+/**
+Maximum width 1110 css
+*/
+.video-width {
+  width: 640px;
+  margin: 40px auto;
+}
+
+.video-height {
+  height: 360px;
+}
+
+.width {
+  min-width: 880px;
+  width:100%;
+}
+
+.carousel-width {
+  width: 880px;
+  margin: 0 auto;
+  display: block;
+}

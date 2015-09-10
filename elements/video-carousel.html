@@ -1,0 +1,254 @@
+<!--
+Copyright 2014 Google Inc. All Rights Reserved.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+-->
+
+<link rel="import" href="../bower_components/polymer/polymer.html">
+<link rel="import" href="../bower_components/neon-animation/neon-animated-pages.html">
+<link rel="import" href="../bower_components/neon-animation/neon-animatable.html">
+<link rel="import" href="../bower_components/neon-animation/neon-animations.html">
+<link rel="import" href="../bower_components/paper-icon-button/paper-icon-button.html">
+<link rel="import" href="../bower_components/iron-icons/iron-icons.html">
+<link rel="import" href="../bower_components/iron-flex-layout/classes/iron-flex-layout.html">
+<link rel="import" href="../bower_components/cast-theme-polymer/cast-theme.html">
+
+<link rel="import" href="video-carousel-element.html">
+
+
+<!--
+This element creates a carousel of the media elements.
+
+To generate the pages it takes the mediaList and converts it to a list of lists based on
+_elementsPerPage.  Then renders the list of lists using neon animated pages.
+
+The genre is displayed above the carousel.
+
+Example:
+
+    <template id="t" is="dom-bind">
+      <cast-manager app-id="4F8B3483"
+          cast-available="{{castAvailable}}"
+          connection-status="{{connectionStatus}}"
+          queue="{{queue}}"
+          local-media="{{localMedia}}">
+        <video-carousel genre="Comedy"
+                        local-media="[[localMedia]]">
+
+        </video-carousel>
+      </cast-manager>
+    </template>
+
+### Styling
+
+The following custom properties are available for styling directly:
+
+Custom property | Description | Default
+----------------|-------------|----------
+`--video-carousel-background-color` | background color of the carousel | `#FFFFFF`
+-->
+<dom-module id="video-carousel">
+  <style>
+    :host {
+      width: 100%;
+      height: 360px;
+      position: relative;
+      background-color: var(--video-carousel-background-color, #FFFFFF);
+      @apply (--paper-font-base);
+    }
+
+    .flex-row {
+      height: 240px;
+      width: 100%;
+    }
+
+    #label {
+      margin-left: 20px;
+      @apply(--font-base-100-large);
+    }
+
+    paper-icon-button {
+      max-width: 40px;
+      color: var(--icon-secondary-fill-color);
+      --iron-icon-width: 39px;
+      --iron-icon-height: 39px;
+    }
+
+    neon-animated-pages {
+      overflow: hidden;
+      height: 100%;
+    }
+
+    #title {
+      display: block;
+    }
+
+  </style>
+  <template>
+    <p id="label">[[genre]]</p>
+
+    <div class="flex-row layout horizontal center">
+      <paper-icon-button id="previous" icon="chevron-left"
+                         on-click="previousPage"
+                         class="layout flex center">
+      </paper-icon-button>
+      <neon-animated-pages id="pages"
+                           class="flex-12"
+                           selected="[[_selected]]"
+                           entry-animation="[[entryAnimation]]"
+                           exit-animation="[[exitAnimation]]">
+        <template is="dom-repeat" items="{{_splitMedia}}" as="split">
+          <neon-animatable class="horizontal layout justified">
+            <template is="dom-repeat" items="[[split]]" as="media">
+              <video-carousel-element media="[[media]]"
+                                      local-media="[[localMedia]]"></video-carousel-element>
+            </template>
+          </neon-animatable>
+        </template>
+      </neon-animated-pages>
+      <paper-icon-button id="next" icon="chevron-right" on-click="nextPage"
+                       class="layout flex center">
+      </paper-icon-button>
+    </div>
+  </template>
+
+  <script>
+    Polymer({
+      is: 'video-carousel',
+      properties: {
+        /**
+         * Label displayed for carousel of videos
+         */
+        genre: String,
+        /**
+         * Currently loaded local media
+         */
+        localMedia: Object,
+        /**
+         * Array of media items to display
+         */
+        mediaList: {
+          type: Array,
+          observer: 'mediaListChanged'
+        }
+      },
+      /**
+       * Array of media items to display per carousel screen
+       */
+      _splitMedia: null,
+
+      /**
+       * Currently selected carousel screen
+       */
+      _selected: 0,
+
+      /**
+       * Media item elements to display in a carousel screen
+       */
+      _elementsPerPage: 6,
+
+      /**
+       * Previous number of media item elements to display in a carousel screen.  Used to determine
+       * if the page needs rerendered.
+       */
+      _prevElementsPerPage: 6,
+      ready: function () {
+        this.set('_selected', 0);
+        this.resize();
+        window.addEventListener('resize', this.resize.bind(this));
+      },
+
+      /**
+       * Determine number of elements to show per page based on width
+       */
+      resize: function () {
+        if (window.innerWidth >= 1600) {
+          this._elementsPerPage = 6;
+        } else if (1360 <= window.innerWidth && window.innerWidth < 1600) {
+          this._elementsPerPage = 5;
+        } else if (1110 <= window.innerWidth && window.innerWidth < 1360) {
+          this._elementsPerPage = 4;
+        } else if (window.innerWidth < 1110) {
+          this._elementsPerPage = 3;
+        }
+        if (this._elementsPerPage !== this._prevElementsPerPage) {
+          this.mediaListChanged();
+          this._prevElementsPerPage = this._elementsPerPage;
+        }
+      },
+
+      /**
+       * When the number of media items par page changes, regenerate the list of lists representing
+       * each page in the carousel
+       */
+      mediaListChanged: function () {
+        if (this.mediaList !== null && this.mediaList !== undefined) {
+          this.set('_splitMedia', []);
+          var mediaLength = Object.keys(this.mediaList).length;
+          var keys = Object.keys(this.mediaList);
+          var counter = 0;
+          var splitCounter = 0;
+          var currentSplit = [];
+          while (counter < mediaLength) {
+            currentSplit.push(this.mediaList[keys[counter]]);
+            splitCounter++;
+            counter++;
+            if (splitCounter === this._elementsPerPage) {
+              this.push('_splitMedia', currentSplit);
+              currentSplit = [];
+              splitCounter = 0;
+            }
+          }
+          //Fill the reset of the elements with empty space holders
+          if (currentSplit.length != 0) {
+            for (var i = currentSplit.length; i < this._elementsPerPage; i++) {
+              currentSplit.push(null);
+            }
+            this.push('_splitMedia', currentSplit);
+          }
+        }
+      },
+
+      /**
+       * Display the next carousel page
+       */
+      nextPage: function () {
+        this.entryAnimation = 'slide-from-right-animation';
+        this.exitAnimation = 'slide-left-animation';
+        this.set('_selected', (this._selected + 1) % this._splitMedia.length);
+        console.log(this._selected);
+      },
+
+      /**
+       * Display the previous carousel page
+       */
+      previousPage: function () {
+        this.entryAnimation = 'slide-from-left-animation';
+        this.exitAnimation = 'slide-right-animation';
+        this.set('_selected', this.mod(this._selected - 1, this._splitMedia.length));
+        console.log(this._selected);
+      },
+
+      /**
+       * Mod helper function for negative numbers in javascript
+       *
+       * @param num
+       * @param modNum
+       * @returns {number}
+       */
+      mod: function (num, modNum) {
+        return (num % modNum + modNum) % modNum;
+      }
+    });
+  </script>
+</dom-module>
