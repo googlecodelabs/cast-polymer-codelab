@@ -67,6 +67,10 @@
         if (castManager) {
           castManager.addItemsToQueue(mediaArray);
         }
+        var videoCarousels = document.querySelectorAll('video-carousel');
+        for (var i = 0; i < videoCarousels.length; i++) {
+          videoCarousels[i].set('mediaList', mediaArray);
+        }
       };
 
       xhr.onerror = function () {
