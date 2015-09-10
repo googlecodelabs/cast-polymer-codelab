@@ -12,6 +12,7 @@
 
   <link rel="import" href="bower_components/cast-manager-polymer/cast-manager.html">
   <link rel="import" href="bower_components/cast-video-polymer/cast-video.html">
+  <link rel="import" href="bower_components/cast-dialog-polymer/cast-dialog.html">
 
   <link rel="stylesheet" href="css/common.css">
   <link rel="stylesheet" media="only screen and (max-width: 1109px)"
@@ -119,7 +120,9 @@
                       show-spinner="{{showSpinner}}"
                       next-queue-media-item="{{nextQueueMediaItem}}"
                       countdown-to-next-media-item="{{countdownToNextMediaItem}}">
-
+        <cast-dialog cast-available="[[castAvailable]]"
+                     countdown-to-next-media-item="[[countdownToNextMediaItem]]"
+                     next-queue-media-item="[[nextQueueMediaItem]]"></cast-dialog>
         <div id="video-content" class="video-content">
           <div class="video-width video-height shadow">
           <cast-video id="video"
