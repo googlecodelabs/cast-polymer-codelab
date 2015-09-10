@@ -1,0 +1,438 @@
+<link rel="import" href="../polymer/polymer.html">
+<link rel="import" href="../paper-icon-button/paper-icon-button.html">
+<link rel="import" href="../paper-slider/paper-slider.html">
+<link rel="import" href="../iron-icons/av-icons.html">
+<link rel="import" href="../iron-icons/iron-icons.html">
+
+<link rel="import" href="../cast-volume-controller-polymer/cast-volume-controller.html">
+<link rel="import" href="../cast-button-polymer/cast-button.html">
+<link rel="import" href="../cast-manager-polymer/helper-behavior.html">
+
+<link rel="import" href="../iron-flex-layout/classes/iron-flex-layout.html">
+<link rel="import" href="../iron-flex-layout/iron-flex-layout.html">
+<link rel="import" href="../cast-theme-polymer/cast-theme.html">
+<!--
+This element represents the chromecast player bar.  It fires events that then trigger iron-signals
+from cast manager to control each component.
+
+It observes the state from cast manager and updates itself appropriately.
+
+It includes the chromecast button for casting.
+
+### Example:
+    <cast-manager queue-manager="queue-manager"
+                app-id="4F8B3483"
+                cast-available="{{castAvailable}}"
+                connection-status="{{connectionStatus}}"
+                local-media="{{localMedia}}"
+                queue="{{queue}}"
+                volume="{{volume}}"
+                has-cast-media="{{hasCastMedia}}"
+                show-queue="{{showQueue}}"
+                cast-device-name="{{castDeviceName}}"
+                current-time="{{currentTime}}"
+                is-full-screen="{{isFullscreen}}">
+       <cast-player-bar local-media="[[localMedia]]"
+                             volume="[[volume]]"
+                             cast-available="[[castAvailable]]"
+                             connection-status="[[connectionStatus]]"
+                             is-full-screen="[[isFullscreen]]"></cast-player-bar>
+    </cast-manager>
+-->
+<dom-module id="cast-player-bar">
+  <style>
+    :host {
+      margin: 0;
+      height: 39px;
+      background-color: var(--player-bar-background-color);
+      padding: 10px 0;
+      overflow: visible;
+      @apply(--layout-horizontal);
+      @apply(--layout-center);
+      @apply(--layout-around-justified);
+      @apply(--paper-font-base);
+      --paper-icon-button-ink-color: #ffffff;
+    }
+
+    #button_play_pause {
+      -webkit-box-ordinal-group: 2;
+      -webkit-order: 1;
+      -ms-flex-order: 1;
+      order: 1;
+    }
+
+    #slider_progress {
+      -webkit-box-ordinal-group: 4;
+      -webkit-order: 3;
+      -ms-flex-order: 3;
+      order: 3;
+      --paper-slider-active-color: var(--icon-third-fill-color);
+      --paper-slider-knob-color: var(--icon-third-fill-color);
+    }
+
+    #label_time {
+      -webkit-box-ordinal-group: 5;
+      -webkit-order: 4;
+      -ms-flex-order: 4;
+      order: 4;
+      color: var(--selected-text-color);
+      @apply(--layout)
+      @apply(--layout-flex);
+      @apply(--font-base-100);
+    }
+
+    #button_flex {
+      -webkit-box-ordinal-group: 11;
+      -webkit-order: 10;
+      -ms-flex-order: 10;
+      order: 10;
+      min-width: 0;
+    }
+
+    cast-button {
+      margin-top: -1px;
+      --cast-button-width: 25px;
+      --cast-button-height: 20px;
+    }
+
+    .hidden {
+      display: none;
+    }
+
+    #button_full_screen {
+      -webkit-box-ordinal-group: 8;
+      -webkit-order: 7;
+      -ms-flex-order: 7;
+      order: 7;
+    }
+
+    #button_queue {
+      -webkit-box-ordinal-group: 7;
+      -webkit-order: 6;
+      -ms-flex-order: 6;
+      order: 6;
+    }
+
+    #volume_controller {
+      -webkit-box-ordinal-group: 6;
+      -webkit-order: 5;
+      -ms-flex-order: 5;
+      order: 5;
+      @apply(--layout-flex);
+      @apply(--layout);
+      @apply(--layout-center-justified);
+      --icon-width: 30px;
+      --icon-height: 30px;
+    }
+
+    .icon-button {
+      height: 39px;
+      width:50px;
+      min-width: 0;
+      color: var(--icon-fill-color);
+      padding: 0;
+      --iron-icon-width:30px;
+      --iron-icon-height:30px;
+      @apply(--layout);
+      @apply(--layout-center-center);
+      @apply(--layout-flex-1);
+    }
+
+    .margin-spacer {
+      margin: 0 10px;
+    }
+
+    .small {
+      max-width:50px;
+    }
+
+    .icon-button:hover {
+      color: var(--hover-over-color);
+    }
+  </style>
+
+  <template>
+    <paper-icon-button id="button_play_pause" icon="av:play-arrow" class="icon-button">
+    </paper-icon-button>
+    <paper-slider id="slider_progress"
+                  min="0"
+                  max="[[_sliderMax]]"
+                  value="{{ _sliderValue }}"
+                  class="flex-12"></paper-slider>
+    <label id="label_time">
+      <span>[[_elementCurrentTime]]</span>/<span>[[_elementDuration]]</span>
+    </label>
+
+    <cast-volume-controller id="volume_controller" class="small"
+                            parent-is-cast-controller="false"
+                            volume="[[ volume ]]"></cast-volume-controller>
+
+    <paper-icon-button id="button_queue" icon="av:playlist-add"
+                       class="icon-button small"
+                       hidden="[[ !queueEnabled ]]"></paper-icon-button>
+
+    <div id="button_flex" class="small">
+      <cast-button id="button_cast"
+                   class="margin-spacer"
+                   cast-available="[[castAvailable]]"
+                   connection-status="[[connectionStatus]]"
+                   color="white"></cast-button>
+    </div>
+
+    <paper-icon-button id="button_full_screen" icon="fullscreen"
+                       class="icon-button small"
+                       hidden$="[[_isConnected(connectionStatus)]]"></paper-icon-button>
+  </template>
+
+  <script>
+    Polymer({
+      is: 'cast-player-bar',
+      properties: {
+        /**
+         * Locally playing media
+         */
+        localMedia: {
+          type: Object,
+          observer: '_localMediaObserver'
+        },
+
+        /**
+         * Volume of media
+         */
+        volume: Number,
+
+        /**
+         * Boolean describing if a cast device is available
+         */
+        castAvailable: Boolean,
+
+        /**
+         * Boolean describing if a queue is enabled
+         */
+        queueEnabled: {
+          type: Boolean,
+          value: false
+        },
+
+        /**
+         * Number describing the current connection status
+         */
+        connectionStatus: {
+          type: Number
+        },
+
+        /**
+         * Boolean describing if the video is full screened
+         */
+        isFullscreen: {
+          type: Boolean,
+          observer: '_fullscreenObserver'
+        },
+
+        /**
+         * Current time of media
+         */
+        currentTime: {
+          type: Number,
+          observer: '_currentTimeObserver'
+        },
+
+        /**
+         * Value fo the seek slider
+         */
+        _sliderValue: {
+          type: Number,
+          value: 0
+        },
+
+        /**
+         * Number repesenting the current state of the media
+         */
+        _playerState: {
+          type: Number,
+          observer: '_playerStateObserver'
+        },
+
+        /**
+         * String representing the current time
+         */
+        _elementCurrentTime: {
+          type: String,
+          value: '0:00:00'
+        },
+
+        /**
+         * String representing the media duration
+         */
+        _elementDuration: {
+          type: String,
+          value: '0:00:00'
+        },
+
+        /**
+         * Number representing the slider max
+         */
+        _sliderMax: {
+          type: Number,
+          value: 1000
+        }
+      },
+      /**
+       * Boolean representing if a user is interacting with the slider
+       */
+      _sliderAction: false,
+
+      behaviors: [cast.HelperBehavior],
+      ready: function () {
+        this.$.button_queue.addEventListener('click', function () {
+          this._toggleQueueElement();
+        }.bind(this));
+
+        // Add event listener for button clicks
+        this.$.button_play_pause.addEventListener('click', function (event) {
+          if (this._playerState !== cast.MediaItem.STATE.PLAYING) {
+            this._play(cast.CastManager.SENDER.CASTCONTROLLER);
+          } else {
+            this._pause(cast.CastManager.SENDER.CASTCONTROLLER);
+          }
+        }.bind(this));
+
+        // When the value changes update _elementCurrentTime
+        this.$.slider_progress.addEventListener('immediate-value-change', this._sliderImmediateTimeUpdate.bind(this));
+
+        // Handle slider update and update time
+        this.$.slider_progress.addEventListener('mousedown', function () {
+          this._sliderAction = true;
+        }.bind(this));
+
+        this.$.slider_progress.addEventListener('mouseup', function () {
+          this._sliderAction = false;
+          this._sliderUpdate();
+        }.bind(this));
+
+        this.addEventListener('mouseleave', function() {
+          this._sliderAction = false;
+        }.bind(this));
+
+        // Add event listener to enable fullscreen
+        this.$.button_full_screen.addEventListener('click', function () {
+          if (this.isFullscreen) {
+            this._exitFullscreen();
+          } else {
+            this._fullscreen();
+          }
+        }.bind(this));
+
+        // Prevent clicks in this element from bubbling up
+        this.addEventListener('click', function (event) {
+          event.stopPropagation();
+        });
+      },
+
+      /**
+       * Updates current time based on slider position
+       */
+      _sliderImmediateTimeUpdate: function () {
+        if (this.localMedia !== null && this._sliderAction) {
+          var time = this.localMedia.duration *
+              (this.$.slider_progress.immediateValue / this._sliderMax);
+          this.set('_elementCurrentTime', this._secondsToHHMMSS(time));
+        }
+      },
+
+      /**
+       * Sends seek requests on events from the slider.
+       */
+      _sliderUpdate: function (newVal) {
+        // convert slider % to duration
+        var time =
+            this.$.slider_progress.immediateValue / this._sliderMax * this.localMedia.duration;
+        this._seek(time, cast.CastManager.SENDER.LOCAL);
+      },
+
+      /**
+       * Observes the full screen state and updates the fullscreen icon based on the current
+       * state.
+       */
+      _fullscreenObserver: function (newVal, oldVal) {
+        if (this.isFullscreen) {
+          this.$.button_full_screen.setAttribute('icon', 'fullscreen-exit');
+        } else {
+          this.$.button_full_screen.setAttribute('icon', 'fullscreen');
+        }
+      },
+
+      /**
+       * Computes whether to display the fullscreen button or not
+       */
+      _computeHidden: function () {
+        return this.connectionStatus === cast.CastManager.CONNECTION_STATUS.CONNECTED;
+      },
+
+      /**
+       * Observes the current media state and updates the play button icon appropriately
+       */
+      _playerStateObserver: function (newVal, oldVal) {
+        if (newVal === cast.MediaItem.STATE.PLAYING) {
+          this.$.button_play_pause.setAttribute('icon', 'av:pause');
+        } else { //If no media is loaded hide the player bar
+          this.$.button_play_pause.setAttribute('icon', 'av:play-arrow');
+        }
+      },
+
+      /**
+       * Handles changes to current time and updates the current time string
+       */
+      _currentTimeObserver: function(newVal, oldVal) {
+        if(!this._sliderAction && this.localMedia) {
+          this.set('_elementCurrentTime',
+              this._secondsToHHMMSS(this.currentTime));
+          if(this.localMedia.duration > 0) {
+            this.set('_sliderValue',
+                Math.round(this.currentTime / this.localMedia.duration * this._sliderMax));
+          } else {
+            this.set('_sliderValue', 0);
+          }
+        }
+      },
+
+      /**
+       * Syncs changes from localMedia.state to local property _playerState.
+       *
+       * @private
+       */
+      _notifyStateChanged: function () {
+        this.set('_playerState', this.localMedia.state);
+      },
+
+      /**
+       * Syncs changes from localMedia.duration to local property _elementDuration.
+       *
+       * @private
+       */
+      _notifyDurationChanged: function () {
+        this._elementDuration = this._secondsToHHMMSS(this.localMedia.duration);
+      },
+
+      /**
+       * Syncs changes between cast manager local media and this elements properties
+       * @param newVal
+       * @param oldVal
+       * @private
+       */
+      _localMediaObserver: function (newVal, oldVal) {
+        if (newVal) {
+          this.listen(this.localMedia, 'state-changed', '_notifyStateChanged');
+          this.listen(this.localMedia, 'duration-changed', '_notifyDurationChanged');
+        }
+        if (oldVal) {
+          this.unlisten(oldVal, 'state-changed', '_notifyStateChanged');
+          this.unlisten(oldVal, 'duration-changed', '_notifyDurationChanged');
+        }
+
+        //Update play button state since the listners only fire when state changes
+        this._notifyStateChanged();
+      }
+    });
+  </script>
+</dom-module>

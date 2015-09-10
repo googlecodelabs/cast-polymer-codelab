@@ -1,0 +1,521 @@
+<!--
+Copyright 2014 Google Inc. All Rights Reserved.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+-->
+
+<link rel="import" href="../polymer/polymer.html">
+
+<link rel="import" href="../paper-slider/paper-slider.html">
+<link rel="import" href="../paper-icon-button/paper-icon-button.html">
+<link rel="import" href="../iron-icons/av-icons.html">
+<link rel="import" href="../iron-flex-layout/classes/iron-flex-layout.html">
+
+<link rel="import" href="../cast-button-polymer/cast-button.html">
+<link rel="import" href="../cast-volume-controller-polymer/cast-volume-controller.html">
+<link rel="import" href="../cast-manager-polymer/helper-behavior.html">
+<link rel="import" href="../cast-theme-polymer/cast-theme.html">
+<!--
+`cast-controller-element` allows users to control cast when the main video controller is off the page.
+
+Example:
+
+    <cast-controller-element id="cast_controller"
+                               volume="[[volume]]"
+                               local-media="[[localMedia]]"
+                               cast-available="[[castAvailable]]"
+                               connection-status="[[connectionStatus]]"
+                               has-cast-media="[[hasCastMedia]]"
+                               cast-device-name="[[castDeviceName]]"
+                               current-time="[[currentTime]]"></cast-controller-element>
+-->
+<dom-module id="cast-controller-element">
+  <style>
+    :host {
+      width: 400px;
+      height: 50px;
+      position: absolute;
+      background-color: var(--third-color);
+      z-index: 10000;
+      overflow: visible;
+      @apply(--transition-base-300);
+      @apply(--paper-font-base);
+    }
+
+    #controller_bar {
+      padding: 0 20px;
+      height: 50px;
+    }
+
+    #button_play_pause {
+      height: 100%;
+      min-width: 40px;
+      width:25%;
+      position:absolute;
+      left:20px;
+      top:0;
+    }
+
+    #label_time {
+      -webkit-box-ordinal-group: 0;
+      -webkit-order: 0;
+      -ms-flex-order: 0;
+      order: 0;
+
+      color: var(--selected-text-color);
+      @apply(--font-base-100);
+    }
+
+    #thumbnail {
+      height: 64px;
+      width: 100px;
+      padding: 0;
+      @apply(--thumbnail);
+    }
+
+    #details {
+      width: 60%;
+      height:100%;
+      margin-left: 35%;
+      cursor: pointer;
+      color: var(--selected-text-color);
+      @apply(--font-base-100-small);
+    }
+
+
+    .margin-spacer {
+      margin: 0 10px;
+    }
+
+    #slider_progress {
+      width: 432px;
+      margin-left: -16px;
+      --paper-slider-active-color: var(--icon-third-fill-color);
+      --paper-slider-knob-color: var(--icon-third-fill-color);
+      --paper-slider-height: 5px;
+    }
+
+    cast-volume-controller {
+      -webkit-box-ordinal-group: 1;
+      -webkit-order: 1;
+      -ms-flex-order: 1;
+      order: 1;
+      max-width:30px;
+      max-height:30px;
+      --volume-height:30px;
+      --volume-width:30px;
+    }
+
+    #max_content {
+      display:block;
+      position:absolute;
+      left: 0;
+      top: 0;
+      width: 400px;
+      height: 180px;
+      overflow: visible;
+      opacity: 0;
+
+      background-color: var(--third-color);
+      @apply(--transition-base-300);
+    }
+
+    .margin-left {
+      margin-left:20px;
+    }
+
+    #min_content {
+      position:absolute;
+      left:0;
+      top:0;
+      width: 400px;
+      height: 50px;
+      display: inline-block;
+      overflow: visible;
+      @apply(--transition-base-300);
+    }
+
+    paper-icon-button {
+      color: var(--icon-fill-color);
+      padding: 0;
+    }
+
+    paper-icon-button:hover {
+      color: var(--hover-over-color);
+    }
+
+    .small {
+      height:30px;
+      width:30px;
+    }
+
+    .large {
+      --iron-icon-height:45px;
+      --iron-icon-width:45px;
+    }
+
+    label#title {
+      @apply(--font-base-400);
+    }
+
+    #slider_container {
+      display:block;
+      position:absolute;
+      top:-15px;
+      left: 0;
+      right: 0;
+    }
+
+    #button_queue {
+      -webkit-box-ordinal-group: 2;
+      -webkit-order: 2;
+      -ms-flex-order: 2;
+      order: 2;
+    }
+
+    cast-button {
+      -webkit-box-ordinal-group: 3;
+      -webkit-order: 3;
+      -ms-flex-order: 3;
+      order: 3;
+      margin-top: 4px;
+      --cast-button-width: 22px;
+      --cast-button-height: 18px;
+    }
+
+  </style>
+  <template>
+    <div id="max_content">
+      <div id="slider_container">
+        <paper-slider id="slider_progress"
+                      min="0"
+                      max="[[_sliderMax]]"
+                      value="{{ _sliderValue }}"></paper-slider>
+      </div>
+      <div id="controller_bar" class="layout horizontal justified center">
+        <label id="label_time" class="flex-3">
+          <span>[[ _elementCurrentTime ]]</span>/<span>[[ _elementDuration ]]</span>
+        </label>
+
+        <cast-volume-controller id="volume_controller" class="margin-spacer"
+                                parent-is-cast-controller="true"
+                                volume="[[ volume ]]"></cast-volume-controller>
+        <paper-icon-button id="button_queue" icon="av:playlist-add" hidden="[[ !queueEnabled ]]"
+                           class="layout horizontal center-center small margin-spacer"></paper-icon-button>
+        <cast-button class="margin-spacer"
+            color="black"
+            cast-available="[[ castAvailable ]]"
+            connection-status="[[ connectionStatus ]]"></cast-button>
+      </div>
+      <div id="thumbnail" class="margin-left">
+      </div>
+    </div>
+    <div id="min_content">
+      <paper-icon-button id="button_play_pause" icon="av:play-arrow"
+                         class="layout horizontal center-center large">
+      </paper-icon-button>
+      <div id="details" class="layout vertical center-justified">
+        <label id="title">[[ _shorten(localMedia.title, 25)]]</label>
+        <label id="cast_device"></label>
+      </div>
+    </div>
+  </template>
+  <script>
+    Polymer({
+      is: 'cast-controller-element',
+      properties: {
+        /**
+         * Locally loaded media
+         */
+        localMedia: {
+          type: Object,
+          observer: '_localMediaObserver'
+        },
+
+        /**
+         * Slider value from 0 - 100
+         */
+        _sliderValue: {
+          type: Number,
+          value: 0
+        },
+
+        /**
+         * Current media time
+         */
+        currentTime:{
+          type: Number,
+          observer: '_currentTimeObserver'
+        },
+
+        /**
+         * Volume
+         */
+        volume: Number,
+
+        /**
+         * Boolean describing a receiver is available
+         */
+        castAvailable: Boolean,
+
+        /**
+         * Boolean describing if cast manager has cast media
+         */
+        hasCastMedia: Boolean,
+
+        /**
+         * Number describing the current cast connection status
+         */
+        connectionStatus: {
+          type:Number,
+          observer: '_connectionStatusObserver'
+        },
+
+        /**
+         * Name of the cast receiver
+         */
+        castDeviceName: {
+          type: String,
+          observer: '_castDeviceNameObserver'
+        },
+
+        /**
+         * Current player state to determine the appropriate icon
+         */
+        _playerState: {
+          type: Number,
+          observer: '_playerStateObserver'
+        },
+
+        /**
+         * current time
+         */
+        _elementCurrentTime: {
+          type: String,
+          value: '0:00:00'
+        },
+
+        /**
+         * Duration
+         */
+        _elementDuration: {
+          type: String,
+          value: '0:00:00'
+        },
+
+        /**
+         * Number representing the slider max
+         */
+        _sliderMax: {
+          type: Number,
+          value: 1000
+        },
+
+        queueEnabled: Boolean
+      },
+      /**
+       * Boolean describing if the slider is being interacted with
+       */
+      _sliderAction: false,
+      behaviors: [cast.HelperBehavior],
+      ready: function () {
+        // Handle play/pause clicks and fire respective actions
+        this.$.button_play_pause.addEventListener('click', function (event) {
+          if (this._playerState !== cast.MediaItem.STATE.PLAYING) {
+            this._play(cast.CastManager.SENDER.CASTCONTROLLER);
+          } else {
+            this._pause(cast.CastManager.SENDER.CASTCONTROLLER);
+          }
+        }.bind(this));
+
+        //Toggle the queue open and closed
+        this.$.button_queue.addEventListener('click', function () {
+          this._toggleQueueElement();
+        }.bind(this));
+
+        // Handle seek requests
+        this.$.slider_progress.addEventListener('immediate-value-change', this._sliderImmediateTimeUpdate.bind(this));
+
+        // Handle slider update and update time
+        this.$.slider_progress.addEventListener('mousedown', function () {
+          this._sliderAction = true;
+        }.bind(this));
+
+        this.$.slider_progress.addEventListener('mouseup', function () {
+          this._sliderAction = false;
+          this._sliderUpdate();
+        }.bind(this));
+
+        this.addEventListener('mouseleave', function() {
+          this._sliderAction = false;
+        }.bind(this));
+
+        // Prevent clicks on this element from propagating to the rest of the dom
+        this.addEventListener('click', function (event) {
+          event.stopPropagation();
+        });
+      },
+
+      /**
+       * Observe the chromecast player state and update the play/pause button remaining
+       *
+       * @param newVal
+       * @param oldVal
+       */
+      _playerStateObserver: function (newVal, oldVal) {
+        if (newVal === cast.MediaItem.STATE.PLAYING) {
+          this.$.button_play_pause.setAttribute('icon', 'av:pause');
+        }
+        //TODO(pying): see if this still needs to be in here
+        //else if (newVal === chrome.cast.media.PlayerState.IDLE) {
+//          this.hideControllerBar();
+      //  }
+      else
+        //If no media is loaded hide the player bar
+        {
+          this.$.button_play_pause.setAttribute('icon', 'av:play-arrow');
+        }
+      },
+
+      /**
+       * Updates time remaining based on current slider position
+       *
+       * @param newVal {number}  value 0-100 of percentage completion
+       */
+      _currentTimeObserver: function (newVal, oldVal) {
+        if (this.hasCastMedia &&
+            this.localMedia && this.localMedia.duration > 0 && !this._sliderAction) {
+          this.set('_elementCurrentTime', this._secondsToHHMMSS(this.currentTime));
+          this.set('_sliderValue', Math.round(newVal/ this.localMedia.duration * this._sliderMax));
+        }
+      },
+
+      /**
+       * Updates current time based on slider position
+       */
+      _sliderImmediateTimeUpdate: function() {
+        if (this.localMedia !== null && this._sliderAction) {
+          var time = this.localMedia.duration * (this.$.slider_progress.immediateValue / this._sliderMax);
+          this.set('_elementCurrentTime', this._secondsToHHMMSS(time));
+        }
+      },
+
+      /**
+       * Sends seek requests on events from the slider.
+       */
+      _sliderUpdate: function (newVal) {
+        if (this.hasCastMedia) {
+          // convert slider % to duration
+          var time = this.$.slider_progress.immediateValue/ this._sliderMax * this.localMedia.duration;
+          this._seek(time, cast.CastManager.SENDER.CASTCONTROLLER);
+        }
+      },
+
+      /**
+       * Observes for changes in the chromecast connection.  When disconnected it hides the
+       * cast controller bar
+       *
+       * @param newVal {boolean} matches castManager.isCasting
+       */
+      _connectionStatusObserver: function (newVal, oldVal) {
+        if (newVal !== cast.CastManager.CONNECTION_STATUS.CONNECTED) {
+          // hide bar
+          this.hideControllerBar();
+        }
+      },
+
+      /**
+       * Updates the device name when it changes setting innerHTML since using the template doesn't
+       * entity decode.
+       */
+      _castDeviceNameObserver: function(newVal, oldVal) {
+        this.$.cast_device.innerHTML = this._shorten('Casting to: ' + this.castDeviceName);
+      },
+
+      /**
+       * Shows the minimized controller element
+       */
+      minimize: function () {
+        if (this.connectionStatus === cast.CastManager.CONNECTION_STATUS.CONNECTED) {
+          this.transform('translateY(-50px)');
+          this.$.min_content.style.transform = '';
+          this.$.min_content.style.height = '50px';
+          this.$.max_content.style.transform = '';
+          this.$.max_content.style.opacity = 0;
+        }
+      },
+      /**
+       * Shows the maximized controller element
+       */
+      maximize: function () {
+        if (this.connectionStatus === cast.CastManager.CONNECTION_STATUS.CONNECTED) {
+          this.transform('translateY(-130px)');
+          this.style.height = '130px';
+          this.$.min_content.style.transform = 'translateY(50px)';
+          this.$.min_content.style.height = '64px';
+          this.$.max_content.style.opacity = 1;
+        }
+      },
+
+      /**
+       * Hides the controller bar
+       */
+      hideControllerBar: function () {
+        this.transform('');
+        this.$.min_content.style.transform = '';
+        this.$.max_content.style.transform = '';
+        this.$.max_content.style.opacity = 0;
+      },
+
+      /**
+       * Syncs changes from localMedia.state to local property _playerState.
+       *
+       * @private
+       */
+      _notifyStateChanged: function() {
+        this.set('_playerState', this.localMedia.state);
+      },
+
+      /**
+       * Syncs changes from localMedia.duration to local property _elementDuration.
+       *
+       * @private
+       */
+      _notifyDurationChanged: function() {
+        this._elementDuration = this._secondsToHHMMSS(this.localMedia.duration);
+      },
+
+      /**
+       * Observes changes to localMedia then updates the local properties accordingly
+       *
+       * @param newVal
+       * @param oldVal
+       * @private
+       */
+      _localMediaObserver: function(newVal, oldVal) {
+        if (this.hasCastMedia) {
+        this.$.thumbnail.style.backgroundImage = 'url(\'' + this.localMedia.thumbnailImageUrl +
+            '\')';
+        }
+        if (newVal) {
+          this.listen(this.localMedia, 'state-changed', '_notifyStateChanged');
+          this.listen(this.localMedia, 'duration-changed', '_notifyDurationChanged');
+        }
+        if (oldVal) {
+          this.unlisten(oldVal, 'state-changed', '_notifyStateChanged');
+          this.unlisten(oldVal, 'duration-changed', '_notifyDurationChanged');
+        }
+      }
+    });
+  </script>
+</dom-module>

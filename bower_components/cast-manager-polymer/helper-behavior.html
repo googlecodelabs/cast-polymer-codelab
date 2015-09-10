@@ -1,0 +1,152 @@
+<script>
+  var cast = cast || {};
+
+  /**
+   * These are commonly used functions across the elements.
+   */
+  cast.HelperBehavior = {
+
+    /**
+     * Converts time in seconds to HH:MM:SS
+     *
+     * @param newSeconds {number}
+     * @returns {string}
+     */
+    _secondsToHHMMSS: function(newSeconds) {
+      var hours = Math.floor(newSeconds / 3600);
+      var minutes = Math.floor((newSeconds % 3600) / 60);
+      var seconds = Math.floor(newSeconds % 60);
+
+      if (minutes < 10) {
+        minutes = '0' + minutes;
+      }
+      if (seconds < 10) {
+        seconds = '0' + seconds;
+      }
+      return hours + ':' + minutes + ':' + seconds;
+    },
+
+    /**
+     * Ellipsise strings down to specific length.
+     *
+     * @param {String} stringToShorten string to shorten
+     * @param {Number} maxLength max length of string before ellipsising
+     * @returns {*} shortened string if necessary with ellipses
+     */
+    _shorten: function(stringToShorten, maxLength) {
+      if (stringToShorten !== null && stringToShorten !== undefined) {
+        return stringToShorten.length > maxLength ? stringToShorten.substr(0, maxLength - 3) +
+        '...' :
+            stringToShorten;
+      }
+      return '';
+    },
+
+    /**
+     * Fires a play event to parent elements.  Mainly targets cast-manager
+     *
+     * @param {cast.CastManager.SENDER}  defines the sender issuing the commands
+     */
+    _play: function(sender) {
+      this.fire('mediaActionEvent', {
+        type: 'play',
+        args:[sender]
+      });
+    },
+
+    _pause: function(sender) {
+      this.fire('mediaActionEvent', {
+        type: 'pause',
+        args:[sender]
+      });
+    },
+
+    _seek: function(time, sender) {
+      this.fire('mediaActionEvent', {
+        type: 'seek',
+        args:[time, sender]
+      });
+    },
+
+    _queueLoadNextItem: function() {
+      this.fire('mediaActionEvent', {
+        type: 'queueLoadNextItem'
+      });
+    },
+
+    _queuePlayItem:function(media) {
+      this.fire('mediaActionEvent', {
+        type: 'queuePlayItem',
+        args: [media]
+      });
+    },
+
+    /**
+     * Fires an event to remove the media item from queue
+     *
+     * @param event
+     * @private
+     */
+    _queueRemoveItem: function (media) {
+      this.fire('queueEvent', {
+        type: 'queueRemoveItem',
+        args: [media]
+      });
+    },
+
+    _queueAddAsCurrentItem: function(media) {
+      this.fire('queueEvent', {
+        type: 'playNow',
+        args: [media]
+      });
+    },
+
+    _queueAddAsNextItem: function(media) {
+      this.fire('queueEvent', {
+        type: 'playNext',
+        args: [media]
+      });
+    },
+
+    _queueAddItemsToQueue: function(items) {
+      this.fire('queueEvent', {
+        type: 'addItemsToQueue',
+        args: [items]
+      });
+    },
+
+    _setLocalMedia:function(media) {
+      this.fire('mediaActionEvent', {
+        type: 'setLocalMedia',
+        args: [media]
+      })
+    },
+
+    _exitFullscreen: function() {
+      this.fire('mediaActionEvent', {
+        type: 'exitFullscreen'
+      });
+    },
+
+    _fullscreen: function() {
+      this.fire('mediaActionEvent', {
+        type: 'fullscreen'
+      });
+    },
+
+    /**
+     * Fires an event to toggle the queue.
+     *
+     * @private
+     */
+    _toggleQueueElement: function(){
+      this.fire('queueEvent', {
+        type:'toggleQueueElement'
+      });
+    },
+
+    _isConnected: function(status) {
+      return status === cast.CastManager.CONNECTION_STATUS.CONNECTED;
+    }
+  }
+</script>

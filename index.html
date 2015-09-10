@@ -9,6 +9,10 @@
   <link rel="import" href="elements/video-carousel.html">
   <link rel="import" href="elements/video-details.html">
 
+
+  <link rel="import" href="bower_components/cast-manager-polymer/cast-manager.html">
+  <link rel="import" href="bower_components/cast-video-polymer/cast-video.html">
+
   <link rel="stylesheet" href="css/common.css">
   <link rel="stylesheet" media="only screen and (max-width: 1109px)"
         href="css/max-1110-styles.css">
@@ -98,14 +102,54 @@
       <img src="images/logo.png">
     </div>
     <div id="cast-content" class="center-box-shadow width bgcolor">
+      <cast-manager app-id="4F8B3483"
+                      cast-available="{{castAvailable}}"
+                      connection-status="{{connectionStatus}}"
+                      local-media="{{localMedia}}"
+                      queue="{{queue}}"
+                      volume="{{volume}}"
+                      has-cast-media="{{hasCastMedia}}"
+                      cast-device-name="{{castDeviceName}}"
+                      current-time="{{currentTime}}"
+                      is-fullscreen="{{isFullscreen}}"
+                      show-spinner="{{showSpinner}}"
+                      next-queue-media-item="{{nextQueueMediaItem}}"
+                      countdown-to-next-media-item="{{countdownToNextMediaItem}}">
+
+        <div id="video-content" class="video-content">
+          <div class="video-width video-height shadow">
+          <cast-video id="video"
+                      local-media="{{localMedia}}"
+                      volume="{{volume}}"
+                      current-time="{{currentTime}}"
+                      is-fullscreen="{{isFullscreen}}"
+                      queue="[[queue]]"
+                      cast-available="[[castAvailable]]"
+                      connection-status="[[connectionStatus]]"
+                      show-spinner="[[showSpinner]]"
+                      cast-device-name="[[castDeviceName]]"></cast-video>
+          </div>
+          <video-details class="video-width"
+             local-media="[[localMedia]]"></video-details>
+        </div>
+        <video-carousel genre="Comedy"
+                        local-media="[[localMedia]]">
+        </video-carousel>
+        <video-carousel genre="Action"
+                        local-media="[[localMedia]]">
+        </video-carousel>
+        <video-carousel genre="Drama"
+                        local-media="[[localMedia]]">
+        </video-carousel>
+      </cast-manager>
     </div>
   </paper-header-panel>
 </template> 
-
 </body>
 <script>
   var t = document.querySelector('#t');
   t.addEventListener('dom-change', function () {
+    castManager = document.querySelector('cast-manager');
   });
 </script>
 </body>

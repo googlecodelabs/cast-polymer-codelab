@@ -1,0 +1,452 @@
+<!--
+Copyright 2014 Google Inc. All Rights Reserved.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+-->
+
+<link rel="import" href="../polymer/polymer.html">
+<link rel="import" href="../iron-signals/iron-signals.html">
+<link rel="import" href="../iron-flex-layout/classes/iron-flex-layout.html">
+<link rel="import" href="../cast-theme-polymer/cast-theme.html">
+
+<link rel="import" href="cast-controller-element.html">
+<link rel="import" href="cast-queue.html">
+
+<!--
+`cast-controller-bar` is a container for both the cast-controller-element and cast-queue.  It observes
+the current state of cast and how far the user has scrolled down the page to determine what to display.
+
+Example:
+    <cast-manager queue-manager="queue-manager"
+                app-id="4F8B3483"
+                cast-available="{{castAvailable}}"
+                connection-status="{{connectionStatus}}"
+                local-media="{{localMedia}}"
+                queue="{{queue}}"
+                volume="{{volume}}"
+                has-cast-media="{{hasCastMedia}}"
+                show-queue="{{showQueue}}"
+                cast-device-name="{{castDeviceName}}"
+                current-time="{{currentTime}}">
+      <cast-controller-bar volume="[[volume]]"
+                               local-media="[[localMedia]]"
+                               cast-available="[[castAvailable]]"
+                               connection-status="[[connectionStatus]]"
+                               has-cast-media="[[hasCastMedia]]"
+                               cast-device-name="[[castDeviceName]]"
+                               current-time="[[currentTime]]"
+                               queue="[[ queue ]]"
+                               video-element="video"
+                               scroll-element="body"></cast-controller-bar>
+    </cast-manager>
+-->
+<dom-module id="cast-controller-bar">
+  <style>
+    :host {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      margin: 0 5%;
+      width: 400px;
+      overflow: visible;
+      display: inline-block;
+      z-index: 1000;
+    }
+
+    #controller {
+      position: absolute;
+      width: 400px;
+      left: 0;
+      bottom: 0;
+      @apply(--transition-base-500);
+    }
+
+    cast-queue.indent {
+      margin-left: 400px;
+    }
+
+  </style>
+  <template>
+
+    <div id="controller">
+      <cast-controller-element id="cast_controller"
+                               volume="[[volume]]"
+                               local-media="[[localMedia]]"
+                               cast-available="[[castAvailable]]"
+                               connection-status="[[connectionStatus]]"
+                               has-cast-media="[[hasCastMedia]]"
+                               cast-device-name="[[castDeviceName]]"
+                               current-time="[[currentTime]]"
+                               queue-enabled="[[queueEnabled]]"></cast-controller-element>
+    </div>
+    <cast-queue id="queue" queue="[[ queue ]]"
+                local-media="[[ localMedia ]]"></cast-queue>
+    <iron-signals on-iron-signal-media-action="_mediaActionHandler"></iron-signals>
+  </template>
+  <script>
+    Polymer({
+      is: 'cast-controller-bar',
+      properties: {
+        /**
+         * Locally loaded media
+         */
+        localMedia: Object,
+
+        /**
+         * Volume
+         */
+        volume: Number,
+
+        /**
+         * Boolean describing a receiver is available
+         */
+        castAvailable: Boolean,
+
+        /**
+         * Number describing the current cast connection status
+         */
+        connectionStatus: {
+          type: Number,
+          observer: '_connectionStatusObserver'
+        },
+
+        /**
+         * Boolean describing if cast has media loaded
+         */
+        hasCastMedia: Boolean,
+
+        /**
+         * Name of the cast receiver
+         */
+        castDeviceName: String,
+
+        /**
+         * Current media time
+         */
+        currentTime: Number,
+
+        /**
+         * Current queue
+         */
+        queue: {
+          type: Object,
+          observer: '_queueListener'
+        },
+
+        queueEnabled: {
+          type: Boolean,
+          value: false
+        },
+
+        /**
+         * Id of video element, used to calculate when the controller needs to display
+         */
+        videoElement: String,
+
+        /**
+         * Id of the scrolling element, used to calculate when the controller needs to display
+         */
+        scrollElement: String,
+
+
+        /**
+         * Max width of control bar, in % of the screen
+         */
+        maxWidth: {
+          type: Number,
+          value: 0.9
+        },
+
+        /**
+         * Duration to maximize bar for before auto minimizing in milli seconds
+         */
+        visibleDuration: {
+          type: Number,
+          value: 2000
+        }
+      },
+      /**
+       * Handle reference to cancel hide async task
+       */
+      _hideHandle: null,
+
+      /**
+       * Pixel value for bottom of the video element
+       */
+      _videoElementBottom:null,
+
+
+      /**
+       * Reference to scrolling element
+       */
+      _scrollElement: null,
+
+      /**
+       * Boolean to prevent the scroll check from consuming too much cpu
+       */
+      _scrollCheckRunning: false,
+
+      /**
+       * Boolean to keep track of whether or not to show the controller element
+       */
+      _showControllerElement: false,
+
+      /**
+       * Boolean to keep track of whether or not the controller bar is maximized
+       */
+      _maximized: false,
+
+      /**
+       * Boolean to keep track of whether or not to show the queue element.
+       */
+      _showQueueElement: false,
+
+      /**
+       * Boolean to keep track if the bar is peeking or not
+       */
+      _isPeeking: false,
+
+      attached: function() {
+        //When element is attached, find where the bottom of the video element and store the scroll
+        //element
+        var videoElement = document.getElementById(this.videoElement);
+        this._scrollElement = document.getElementById(this.scrollElement);
+        if (!this._scrollElement) {
+          this._scrollElement = document.body;
+        }
+        this._videoElementBottom = this._scrollElement.scrollTop + videoElement.getBoundingClientRect().bottom;
+
+        //Configure the scroll listener
+        this._setScrollListener();
+      },
+
+      ready: function () {
+        //On mouse over prevent the controllers from hiding
+        this.addEventListener('mouseover', function () {
+          if (this._hideHandle != null) {
+            this.cancelAsync(this._hideHandle);
+          }
+          this._hideHandle = null;
+          this._isPeeking = false;
+
+          if (this._showControllerElement || this._showQueueElement) {
+            this.maximize();
+          }
+        }.bind(this));
+
+        //On mouse out sent a timer to minimize the element
+        this.addEventListener('mouseout', function () {
+          this._setHideTimeout();
+        });
+      },
+
+      /**
+       * Adds a scroll listener to determine when to show the cast control element.
+       *
+       * @private
+       */
+      _setScrollListener:function() {
+        var el = document.body === this._scrollElement ? window : this._scrollElement;
+        el.addEventListener('scroll', function () {
+          //Request an animation frame for the check
+          if (!this._scrollCheckRunning) {
+            this._scrollCheckRunning = true;
+            window.requestAnimationFrame(function() {
+              if (!this._showControllerElement &&
+                  this.connectionStatus ===
+                  cast.CastManager.CONNECTION_STATUS.CONNECTED &&
+                  this.hasCastMedia &&
+                  this._scrollElement.scrollTop > this._videoElementBottom) {
+                this.showController();
+              } else if (this._showControllerElement &&
+                  this._scrollElement.scrollTop <= this._videoElementBottom) {
+                this.hideController();
+              }
+              this._scrollCheckRunning = false;
+            }.bind(this));
+          }
+        }.bind(this));
+      },
+      /**
+       * Show the cast controller element
+       */
+      showController: function () {
+        this._showControllerElement = true;
+        //if user is scrolling while the queue is maximized, resize the queue
+        if (this._maximized) {
+          this.$.queue.setWidth(this._calculateQueueWidth());
+          this.$.cast_controller.maximize();
+        } else {
+          this.$.queue.resetWidth();
+          this.$.cast_controller.minimize();
+        }
+        this.$.queue.classList.add('indent');
+      },
+
+      /**
+       * Hides the controller element
+       */
+      hideController: function () {
+        this._showControllerElement = false;
+        this.$.queue.classList.remove('indent');
+        if (this._maximized) {
+          this.$.queue.setWidth(this._calculateQueueWidth());
+        } else {
+          this.$.queue.resetWidth();
+        }
+        this.$.cast_controller.hideControllerBar();
+      },
+
+      /**
+       * Shows the queue element
+       */
+      showQueue: function () {
+        this._showQueueElement = true;
+        if (this._maximized) {
+          this.$.queue.setWidth(this._calculateQueueWidth());
+          this.$.queue.maximize();
+        } else {
+          this.$.queue.minimize();
+        }
+      },
+
+      /**
+       * Hides the queue element
+       */
+      hideQueue: function () {
+        this._showQueueElement = false;
+        this.$.queue.hide();
+        this.$.queue.resetWidth();
+      },
+
+      /**
+       * Calculates the remainder width to size the queue
+       *
+       * @private
+       */
+      _calculateQueueWidth: function () {
+        var remainderWidth = window.innerWidth * this.maxWidth;
+        if (this._showControllerElement) {
+          remainderWidth -= this.$.controller.clientWidth;
+        }
+        return remainderWidth;
+      },
+
+      /**
+       * Maximizes the controller element and queue if applicable.
+       */
+      maximize: function () {
+        this._maximized = true;
+        if (this._showQueueElement) {
+          this.$.queue.setWidth(this._calculateQueueWidth());
+          this.$.queue.maximize();
+        }
+        if (this._showControllerElement) {
+          this.$.cast_controller.maximize();
+        }
+      },
+
+      /**
+       * Minimizes the controller element and queue if applicable.
+       */
+      minimize: function () {
+        this._maximized = false;
+        if (this._showQueueElement) {
+          this.$.queue.resetWidth();
+          this.$.queue.minimize();
+        }
+        if (this._showControllerElement) {
+          this.$.cast_controller.minimize();
+        }
+      },
+
+      /**
+       * Observes the connection status to automatically hide the controller
+       */
+      _connectionStatusObserver: function (newVal, oldVal) {
+        //Observe when either the video has ended or casting has ended and automatically
+        //hide the cast controller
+        //TODO(pying): fix when video finishes and nothing is playing detect state and hide controller
+        if (this.connectionStatus !== cast.CastManager.CONNECTION_STATUS.CONNECTED ||
+            !this.hasCastMedia) {
+          this.hideController();
+        }
+      },
+
+      /**
+       * Handles iron events to toggle the queue element
+       */
+      _mediaActionHandler: function (e, data, sender) {
+        switch (data.action) {
+          case 'toggleQueueElement':
+            if (this._showQueueElement) {
+              this.hideQueue();
+            } else if(this.queueEnabled) {
+              this.showQueue();
+            }
+            break;
+        }
+      },
+
+      /**
+       * Sets a hide timer to minimize the controller bar
+       */
+      _setHideTimeout: function () {
+        if (this._hideHandle === null) {
+          this._hideHandle = this.async(function () {
+            if(this._isPeeking) {
+              this.hideQueue();
+              this._isPeeking = false;
+            } else {
+              this.minimize();
+            }
+          }, this.visibleDuration);
+        } else {
+          this.cancelAsync(this._hideHandle);
+          this._hideHandle = null;
+          this._setHideTimeout();
+        }
+      },
+
+      /**
+       * Briefly displays the queue and then auto hides it when changes to the queue are made
+       */
+      _peek: function() {
+        if (this.queueEnabled && !this._showQueueElement && !this._showControllerElement) {
+          this._isPeeking = true;
+          this.showQueue();
+          this._setHideTimeout();
+        }
+      },
+
+      /**
+       * Listens for changes in the queue to peek the queue bar
+       *
+       * @param newVal
+       * @param oldVal
+       * @private
+       */
+      _queueListener: function (newVal, oldVal) {
+        if (newVal) {
+          this.queueEnabled = true;
+          this.listen(this.queue, 'items-changed', '_peek');
+        } else {
+          this.queueEnabled = false;
+        }
+        if (oldVal) {
+          this.unlisten(oldVal, 'items-changed', '_peek');
+        }
+      }
+    });
+  </script>
+</dom-module>

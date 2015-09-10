@@ -1,0 +1,23 @@
+{
+  "name": "cast-theme-polymer",
+  "version": "1.0.0",
+  "description": "cast-theme styling",
+  "keywords": [
+    "cast-videos",
+    "polymer",
+    "cast",
+    "chromecast"
+  ],
+  "license": "Apache-2.0",
+  "ignore": [
+    "**/.*",
+    "node_modules",
+    "bower_components",
+    "test",
+    "tests"
+  ],
+  "dependencies": {
+    "polymer": "polymer/Polymer#~1.1.3",
+    "paper-styles": "polymerElements/paper-styles#~1.0.11"
+  }
+}

@@ -1,0 +1,37 @@
+{
+  "name": "cast-video-polymer",
+  "description": "cast video polymer",
+  "keywords": [
+    "cast",
+    "video",
+    "polymer"
+  ],
+  "license": "Apache-2.0",
+  "ignore": [
+    "**/.*",
+    "node_modules",
+    "bower_components",
+    "test",
+    "tests"
+  ],
+  "dependencies": {
+    "polymer": "polymer/Polymer#~1.1.3",
+    "iron-signals": "polymerElements/iron-signals#~1.0.2",
+    "paper-spinner": "polymerElements/paper-spinner#~1.0.2",
+    "iron-flex-layout": "polymerElements/iron-flex-layout#~1.0.3",
+    "cast-theme-polymer": "googlecast/cast-theme-polymer",
+    "cast-manager-polymer": "googlecast/cast-manager-polymer#~1.0.2",
+    "cast-player-bar-polymer": "googlecast/cast-player-bar-polymer"
+  },
+  "homepage": "https://github.com/googlecast/cast-video-polymer",
+  "_release": "b40cc66602",
+  "_resolution": {
+    "type": "branch",
+    "branch": "master",
+    "commit": "b40cc666024a8e812b861ca8bf5d1bcd42ee3139"
+  },
+  "_source": "git://github.com/googlecast/cast-video-polymer.git",
+  "_target": "*",
+  "_originalSource": "googlecast/cast-video-polymer",
+  "_direct": true
+}

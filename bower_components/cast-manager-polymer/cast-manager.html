@@ -1,0 +1,1216 @@
+<!--
+Copyright 2014 Google Inc. All Rights Reserved.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+-->
+
+<link rel="import" href="../polymer/polymer.html">
+<link rel="import" href="../iron-signals/iron-signals.html">
+
+<link rel="import" href="media-item.html">
+<link rel="import" href="queue-manager.html">
+<script>
+  var cast = window.cast || {};
+  (function () {
+    'use strict';
+
+    var CastManager = Polymer({
+      is: 'cast-manager',
+      properties: {
+        /**
+         * Id defining the receiver app
+         */
+        appId: String,
+
+        /**
+         * Media information to display
+         */
+        localMedia: {
+          type: Object,
+          notify: true
+        },
+
+        /**
+         * Reference to loaded cast Media
+         */
+        castMedia: {
+          type: Object,
+          notify: true
+        },
+
+        /**
+         * Queue representation
+         */
+        queue: {
+          type: Object,
+          notify: true,
+          value: function () {
+            return new cast.QueueManager();
+          }
+        },
+
+        /**
+         * Loading status
+         */
+        showSpinner: {
+          type: Boolean,
+          notify: true,
+          value: false
+        },
+
+        connectionStatus: {
+          type: Number,
+          notify: true,
+          value: 0 //CastManager.CONNECTION_STATUS
+        },
+
+        /**
+         * Chrome cast session reference
+         */
+        session: {
+          type: Object,
+          notify: true
+        },
+
+        /**
+         * Boolean defining if a cast receiver is available to cast to.
+         */
+        castAvailable: {
+          type: Boolean,
+          notify: true,
+          value: false
+        },
+
+        volume: {
+          type: Number,
+          value: .5,
+          notify: true
+        },
+
+        currentTime: {
+          type: Number,
+          value: 0,
+          notify: true,
+          observer: ['_currentTimeObserver']
+        },
+
+        castDeviceName: {
+          type: String,
+          value: 'Local Player',
+          notify: true
+        },
+
+        showQueue: {
+          type: Boolean,
+          value: false,
+          notify: true
+        },
+
+        /**
+         * Attribute instead of function to share the state easier with other elements
+         */
+        hasCastMedia: {
+          type: Boolean,
+          value: false,
+          notify: true
+        },
+
+        isFullscreen: {
+          type: Boolean,
+          value: false,
+          notify: true
+        },
+
+        nextQueueMediaItem: {
+          type: Object,
+          notify: true
+        },
+
+        countdownToNextMediaItem: {
+          type: Number,
+          notify: true,
+          value: null
+        }
+      },
+      _timerHandle: null,
+      _savedQueue: null,
+      _loadSavedQueueOnDisconnect: true,
+      _preloadTime: 20,
+
+      listeners: {
+        'toggleCastConnection': 'toggleCastConnection',
+        'queueEvent': '_onQueueEvent',
+        'mediaActionEvent': '_onMediaActionEvent'
+      },
+
+      ready: function () {
+        this.init();
+      },
+
+      _repeatObserver: function (repeatmode) {
+        console.log('repeat observer' + repeatmode);
+      },
+
+      init: function () {
+        //Only init cast for chrome browsers
+        if (this.appId !== null
+            && window.chrome !== null
+            && window.chrome !== undefined
+            && window.navigator.vendor === 'Google Inc.') {
+          var castScript = document.createElement('script');
+          castScript.src = 'https://www.gstatic.com/cv/js/sender/v1/cast_sender.js';
+          document.getElementsByTagName('head')[0].appendChild(castScript);
+
+          // Init cast
+          var initializeCastApi = function () {
+            if (!chrome.cast || !chrome.cast.isAvailable) {
+              window.setTimeout(initializeCastApi.bind(this), 500);
+            } else {
+              var sessionRequest = new chrome.cast.SessionRequest(this.appId);
+              var apiConfig = new chrome.cast.ApiConfig(sessionRequest,
+                  this._sessionListener.bind(this),
+                  this._receiverListener.bind(this));
+              chrome.cast.initialize(apiConfig, this._initSuccess, this._initFailure);
+            }
+          };
+          initializeCastApi.call(this);
+        } else {
+          console.log('No receiver found for app');
+        }
+      },
+      /******* Event Listeners ************/
+
+      /**
+       * Listener invoked when a session is created or connected.
+       */
+      _sessionListener: function (session) {
+        console.log('SessionListener: Session changed');
+        if (session.status === chrome.cast.SessionStatus.CONNECTED) {
+          console.log('SessionListener: Session connected');
+          this.set('connectionStatus', cast.CastManager.CONNECTION_STATUS.CONNECTED);
+
+          //Store a local reference to the session and set our receiver name
+          this.setSession(session);
+
+          // Check if the session has existing media
+          if (session.media.length > 0
+              && session.media[0].playerState !== chrome.cast.media.PlayerState.IDLE) {
+            // If the session has existing media update local info with media details
+            this._onMediaDiscovered(session.media[0]);
+          } else if (this.queue.items.length > 0) {
+            this._loadSavedQueueOnDisconnect = false;
+            this.castLoadItems(this.queue.items);
+          } else if (this.localMedia) {
+            this.loadMediaOntoCast(this.localMedia, true);
+          }
+        } else {
+          console.log('SessionListener: Session disconnected');
+          this.set('connectionStatus', cast.CastManager.CONNECTION_STATUS.DISCONNECTED);
+          //Todo(pying): check if this is the proper place to revert our old queue
+          //or if it's in onStopSuccess
+          //this.set('queue', this._savedQueue);
+        }
+        //Todo(pying): check if we need to check session updates
+        //TODO(pying): check if we need sender in events
+      },
+
+      /**
+       * Handles receiver update events
+       */
+      _receiverListener: function (e) {
+        console.log('receiver listener');
+        this.set('castAvailable', e === chrome.cast.ReceiverAvailability.AVAILABLE);
+      },
+
+      /****************** Event Handlers *******************************/
+      _initSuccess: function (e) {
+        console.log('Cast init success');
+      },
+
+      _initFailure: function (e) {
+        console.long('Cast init failure' + JSON.stringify(e));
+      },
+
+
+      /**
+       * When new media is discovered, attach a handler to listen for further events
+       * and sync the current local media state with the casting media.
+       *
+       * If the cast device has no previous media, this method will match the cast device seek
+       * and player state to local media.
+       *
+       * If the cast device is already casting something, this method will match local media to
+       * the casting media.
+       */
+      _onMediaDiscovered: function (media) {
+        //Store reference to media object
+        this.setCastMedia(media);
+
+        media.addUpdateListener(this._onCastMediaUpdate.bind(this));
+        //TODO(pying): make sure this works for a single video
+
+        //Copy over remote queue to local queue if it's not empty
+        if (media.items !== null) {
+          this._queueSwitchFromLocalToCast(media.items);
+        }
+        this._onCastMediaUpdate();
+      },
+
+      /**
+       * Called when cast media changes
+       */
+      _onCastMediaUpdate: function () {
+        console.log('Cast media changed');
+
+        //If the session still has media sync
+        if (this.castMedia) {
+          //Parse the queue and update our local representation
+          this.queue.parseCastQueue(this.castMedia.items);
+
+          //Sync localMedia if it's different or if localMedia doesn't exist or have a queueId
+          if (!this.localMedia || !this.localMedia.queueId || (this.castMedia.currentItemId &&
+              this.localMedia.queueId !== this.castMedia.currentItemId)) {
+            this.setLocalMedia(this.queue.getItemById(this.castMedia.currentItemId));
+          }
+
+          //Sync the volume
+          this.volume = this.castMedia.volume.level;
+          //TODO(pying): make sure this works for a single video as well
+
+          //Sync the repeat/shuffle state
+          this._repeatModeSyncer();
+
+          //Sync the playing state
+          this._castPlayerStateSyncer();
+
+          // Hide preload dialog
+          if (this.castMedia.playerState !== chrome.cast.media.PlayerState.BUFFERING &&
+              this.castMedia.preloadedItemId === null) {
+            this._resetState();
+            this.hidePreloadDialog();
+          }
+          if (this.castMedia.currentItemId) {
+            // Sync queue current index which is used sometimes after disconnect
+            this.queue.setCurrentIndex(this.queue.getIndexOfId(this.castMedia.currentItemId));
+          } else {
+            this.set('hasCastMedia', false);
+          }
+        } else {
+          //Otherwise update that cast media is null
+          this.set('hasCastMedia', false);
+        }
+      },
+
+      _repeatModeSyncer: function () {
+        var repeatMode = this._castQueueRepeatModeToLocalRepeatMode(this.castMedia.repeatMode);
+        var shuffle = this._castQueueRepeatModeToLocalShuffle(this.castMedia.repeatMode);
+        this.queue.setRepeatMode(repeatMode);
+        this.queue.setShuffle(shuffle);
+      },
+
+      _castPlayerStateSyncer: function () {
+        //Sync local player state with cast player state
+        this.localMedia.setState(
+            this._castPlayerStateToLocalPlayerState(this.castMedia.playerState));
+
+        //If the media is playing start an interval to update the currentTime
+        if (this.castMedia.playerState === chrome.cast.media.PlayerState.PLAYING) {
+          this._hideSpinner();
+          // If the media is playing, set an interval to calculate elapsed time
+          if (this._timerHandle === null) {
+            this._timerHandle = window.setInterval(function () {
+              this.set('currentTime', this.castMedia.getEstimatedTime());
+            }.bind(this), 1000);
+          }
+        } else {
+          // Otherwise clear the interval and reset previous time
+          window.clearInterval(this._timerHandle);
+          this._timerHandle = null;
+        }
+      },
+
+      _onMediaError: function (e) {
+        console.log('Media error: ' + JSON.stringify(e));
+      },
+
+      /**
+       * Called when a new session is created
+       */
+      _onRequestSessionSuccess: function (session) {
+        console.log('Request session success');
+
+        //Set the session update
+        this._sessionListener(session);
+      },
+
+      _onGenericSuccess: function (msg) {
+        console.log('Generic success: ' + JSON.stringify(msg));
+      },
+
+      _onGenericFailure: function (msg) {
+        console.log('Generic failure: ' + JSON.stringify(msg));
+      },
+
+      _onRequestSessionFailure: function (e) {
+        console.log('Request session failure: ' + JSON.stringify(e));
+
+        this.set('connectionStatus', cast.CastManager.CONNECTION_STATUS.DISCONNECTED);
+      },
+
+      _onStopSuccess: function () {
+        // Clear timer
+        window.clearInterval(this._timerHandle);
+
+        // Set connection status to disconnected
+        this.set('connectionStatus', cast.CastManager.CONNECTION_STATUS.DISCONNECTED);
+        this.set('hasCastMedia', false);
+
+        if (this._loadSavedQueueOnDisconnect && this._savedQueue !== null) {
+          // Revert to previous queue
+          this.set('queue', this._savedQueue);
+
+          // Revert to last playing item
+          this.setLocalMedia(this.queue.getCurrentItem());
+          this._loadSavedQueueOnDisconnect = true;
+        } else {
+          // Sync local media to the last state of the queue
+          this.seek(this.currentTime, cast.CastManager.SENDER.LOCAL);
+          this.pause(cast.CastManager.SENDER.LOCAL);
+        }
+
+        this._resetState();
+        console.log('Disconnecting succeeded');
+      },
+
+      _onStopFailure: function (e) {
+        console.log('Disconnecting failure: ' + JSON.stringify(e));
+      },
+      _onQueueEvent: function (event) {
+        this[event.detail.type].apply(this, event.detail.args);
+      },
+      _onMediaActionEvent: function (event) {
+        this[event.detail.type].apply(this, event.detail.args);
+      },
+
+      /********************** Compute methods ************************/
+      /**
+       * Start a casting session
+       */
+      startCast: function () {
+        //update connection status
+        this.set('connectionStatus', cast.CastManager.CONNECTION_STATUS.CONNECTING);
+
+        //request a session
+        chrome.cast.requestSession(this._onRequestSessionSuccess.bind(this),
+            this._onRequestSessionFailure.bind(this));
+      },
+
+      setSession: function (session) {
+        this.set('session', session);
+        this.set('castDeviceName', session.receiver.friendlyName);
+      },
+
+      setCastMedia: function (media) {
+        this._hideSpinner();
+        this.set('hasCastMedia', true);
+        this.set('castMedia', media);
+      },
+
+      /**
+       * Sets local media and fires an iron event to notify elements of the change
+       */
+      setLocalMedia: function (media) {
+        this.queue.resetNextItem();
+        this.set('localMedia', new cast.MediaItem(media));
+
+        this._fireIronEvent({
+          'detail': {
+            'name': 'media-action',
+            'data': {
+              'action': 'loadMedia',
+              'thumbnailImageUrl': media.thumbnailImageUrl,
+              'url': media.url
+            }
+          }
+        });
+      },
+
+      loadMediaOntoCast: function (media, autoplay) {
+        var mediaInfo = this._localMediaToCastMedia(media);
+        var request = new chrome.cast.media.LoadRequest(mediaInfo);
+        request.autoplay = autoplay;
+        request.currentTime = this.currentTime;
+
+        this.session.loadMedia(request, this._onMediaDiscovered.bind(this),
+            this._onMediaError.bind(this));
+      },
+
+      isCasting: function () {
+        return this.connectionStatus === cast.CastManager.CONNECTION_STATUS.CONNECTED;
+      },
+
+      /**
+       * Sets the content currentTime and updates the time remaining string
+       */
+      _currentTimeObserver: function (newVal, oldVal) {
+        if (this.localMedia && !this.hasCastMedia) {
+          var timeRemaining = this.localMedia.duration - this.currentTime;
+          if (timeRemaining < 20 && timeRemaining > 0) {
+            this.set('nextQueueMediaItem', this.queue.peekNextItem());
+            this.set('countdownToNextMediaItem', timeRemaining);
+          }
+        } else if (this.hasCastMedia && this.castMedia.preloadedItemId !== null) {
+          this.set('nextQueueMediaItem', this.queue.getItemById(this.castMedia.preloadedItemId));
+          this.set('countdownToNextMediaItem', this.localMedia.duration - this.currentTime);
+        }
+      },
+
+      toggleCastConnection: function () {
+        //If connected, disconnected
+        if (this.isCasting()) {
+          this.stopCasting();
+        } else {
+          //otherwise connect to cast
+          this.exitFullscreen();
+          this.startCast();
+        }
+      },
+
+      toggleQueueElement: function () {
+        console.log('Toggle queue element');
+
+        this.set('showQueue', !this.showQueue);
+        this._fireIronEvent({
+          'detail': {
+            'name': 'media-action',
+            'data': {
+              'action': 'toggleQueueElement',
+              'showQueue': this.showQueue
+            }
+          }
+        });
+      },
+
+      playNow: function (media) {
+        console.log('Play now: ' + media.url);
+        //Send playNow Event to listening elements
+        this._fireIronEvent(
+            {
+              'detail': {
+                'name': 'media-action',
+                'data': {
+                  'action': 'playNow',
+                  'media': media
+                }
+              }
+            }
+        );
+
+        if (this.hasCastMedia) {
+          //Get the id of the current index
+          var currentIndex = this.queue.getIndexOfId(this.castMedia.currentItemId);
+
+          //Success handler for Play now insertion to automatically play the inserted item
+          var successHandler = function (data) {
+            this.castQueuePlayItem(this.castMedia.items[currentIndex].itemId);
+          }.bind(this);
+
+          if (currentIndex !== -1) {
+            this.castQueueInsertItems([media], this.castMedia.currentItemId,
+                successHandler.bind(this), true);
+          } else {
+            this.castQueueInsertItems([media], null, successHandler, true);
+          }
+        } else if (this.session && this.session.status === chrome.cast.SessionStatus.CONNECTED) {
+          this.loadMediaOntoCast(media, true);
+        } else {
+          //Since inserting items automatically updates index, store a copy of it
+          var tmpIndex = (this.queue.currentIndex) ? this.queue.currentIndex : 0;
+          this.queue.insertItemsAtIndex([media], this.queue.currentIndex);
+
+          //And reset it later on
+          this.queue.setCurrentIndex(tmpIndex);
+
+          this.setLocalMedia(this.queue.getCurrentItem());
+        }
+      },
+
+      playNext: function (media) {
+        console.log('Play next: ' + media.url);
+        this._fireIronEvent({
+          'detail': {
+            'name': 'media-action',
+            'data': {
+              'action': 'playNext',
+              'media': media
+            }
+          }
+        });
+
+        if (this.hasCastMedia) {
+          // Get the index of currently casting item
+          var currentIndex = this.queue.getIndexOfId(this.castMedia.currentItemId);
+
+          // If index is found and next item exists then insert the media before the next item id
+          if (currentIndex !== -1 && currentIndex + 1 < this.castMedia.items.length) {
+            var nextElementId = this.queue.items[currentIndex + 1].queueId;
+            this.castQueueInsertItems([media], nextElementId, null, true);
+          } else {
+            // Otherwise insert the item at the end of the queue
+            this.castQueueInsertItems([media], null, null, true);
+          }
+        } else if (this.session && this.session.status === chrome.cast.SessionStatus.CONNECTED) {
+          this.loadMediaOntoCast(media, true);
+        } else {
+          this.queue.insertItemsAtIndex([media], this.queue.currentIndex + 1);
+        }
+      },
+
+      queueMoveItemToNewIndex: function (itemId, newIndex) {
+        console.log('Move item to new index id: ' + itemId + ' index: ' + newIndex);
+        this._fireIronEvent({
+          'detail': {
+            'name': 'media-action',
+            'data': {
+              'action': 'queueMoveItemToNewIndex',
+              'itemId': itemId,
+              'newIndex': newIndex
+            }
+          }
+        });
+
+        if (this.hasCastMedia) {
+          this.castQueueMoveItem(itemId, newIndex);
+        } else {
+          this.queue.moveItemToNewIndex(itemId, newIndex);
+        }
+      },
+
+      queuePlayItem: function (media) {
+        console.log('Playing queue item with id: ' + media.queueId);
+        this._fireIronEvent({
+          'detail': {
+            'name': 'media-action',
+            'data': {
+              'action': 'queuePlayItem',
+              'media': media
+            }
+          }
+        });
+
+        if (this.hasCastMedia) {
+          this.castQueuePlayItem(media.queueId);
+        } else {
+          this.queue.setCurrentIndex(this.queue.getIndexOfId(media.queueId));
+          this.setAutoPlayTrigger(true);
+          this.setLocalMedia(this.queue.getCurrentItem());
+        }
+      },
+
+      queueEmpty: function () {
+        console.log('Queue empty');
+
+        this._fireIronEvent({
+          'detail': {
+            'name': 'media-action',
+            'data': {
+              'action': 'queueEmpty'
+            }
+          }
+        });
+
+        if (this.hasCastMedia) {
+          var itemIdsToRemove = [];
+          for (var i = 0; i < this.castMedia.items.length; i++) {
+            itemIdsToRemove.push(this.castMedia.items[i].itemId);
+          }
+          this.castQueueRemoveItems(itemIdsToRemove);
+        } else {
+          this.queue.empty();
+        }
+      },
+
+      queueToggleShuffle: function () {
+        console.log('Toggling shuffle mode');
+        this._fireIronEvent({
+          'detail': {
+            'name': 'media-action',
+            'data': {
+              'action': 'queueToggleShuffle'
+            }
+          }
+        });
+        this.queue.toggleShuffle();
+        if (this.isCasting()) {
+          this.castSetRepeat(this._localQueueToCastQueueRepeatMode(this.queue));
+        }
+      },
+
+      queueToggleRepeatMode: function () {
+        console.log('Toggling repeat mode');
+
+        this._fireIronEvent({
+          'detail': {
+            'name': 'media-action',
+            'data': {
+              'action': 'queueToggleRepeatMode'
+            }
+          }
+        });
+        this.queue.toggleRepeatMode();
+
+        if (this.isCasting()) {
+          this.castSetRepeat(this._localQueueToCastQueueRepeatMode(this.queue));
+        }
+      },
+
+      queuePlayItemWithId: function (id) {
+        console.log('Playing queue item with id: ' + id);
+      },
+
+      stopCasting: function () {
+        this.session.stop(this._onStopSuccess.bind(this),
+            this._onStopFailure.bind(this));
+      },
+
+      fullscreen: function () {
+        console.log('Fullscreen');
+        this._fireIronEvent({
+          'detail': {
+            'name': 'media-action',
+            'data': {
+              'action': 'fullscreen'
+            }
+          }
+        });
+      },
+      /**
+       * Fire an event to exit full screen
+       */
+      exitFullscreen: function () {
+        this._fireIronEvent({
+          'detail': {
+            'name': 'media-action',
+            'data': {
+              'action': 'exitFullscreen'
+            }
+          }
+        });
+      },
+
+      addItemsToQueue: function (items) {
+        this._fireIronEvent({
+          'detail': {
+            'name': 'media-action',
+            'data': {
+              'action': 'addItemsToQueue',
+              'items': items
+            }
+          }
+        });
+
+        //If casting then add to cast queue
+        if (this.hasCastMedia) {
+          this.castQueueInsertItems(items, null, null, true);
+        } else if (this.session && this.session.status === chrome.cast.SessionStatus.CONNECTED) {
+          this.castLoadItems(items);
+        } else { //Otherwise add to local queue
+          this.queue.pushAll(items);
+          if (!this.localMedia) {
+            this.setLocalMedia(this.queue.getCurrentItem());
+          }
+        }
+      },
+
+      queueRemoveItem: function (media) {
+        console.log('Removing item from queue: ', media.queueId);
+        this._fireIronEvent({
+          'detail': {
+            'name': 'media-action',
+            'data': {
+              'action': 'queueRemoveItem',
+              'media': media
+            }
+          }
+        });
+        if (this.hasCastMedia) {
+          this.castQueueRemoveItems([media.queueId]);
+        } else {
+          this.queue.removeItemWithId(media.queueId);
+        }
+      },
+
+      queueLoadNextItem: function () {
+        var mediaItem = this.queue.getNextItem();
+        if (mediaItem) {
+          this.setLocalMedia(mediaItem);
+        }
+      },
+
+      castLoadItems: function (items) {
+        if(items.length > 0) {
+          this._showSpinner();
+
+          //Convert local queue items to cast queue Items
+          var itemsToAdd = [];
+          for (var i = 0; i < items.length; i++) {
+            itemsToAdd[i] = new chrome.cast.media.QueueItem(
+                this._localMediaToCastMedia(items[i]));
+            itemsToAdd[i].preloadTime = 20;
+            if (this.localMedia.queueId && items[i].queueId === this.localMedia.queueId &&
+            this.currentTime !== 0) {
+              itemsToAdd[i].startTime = this.currentTime;
+            }
+          }
+          var request = new chrome.cast.media.QueueLoadRequest(itemsToAdd);
+          request.startIndex = this.queue.currentIndex;
+          request.repeatMode = this._localQueueToCastQueueRepeatMode(this.queue);
+
+          this.session.queueLoad(request, this._onMediaDiscovered.bind(this), this._onMediaError);
+        }
+      },
+
+      /**
+       * Converts local media items to cast items then inserts them.  If insertBefore is
+       * defined it inserts the items before the insertBefore itemId.  Otherwise it inserts the
+       * items ath the beginning.
+       */
+      castQueueInsertItems: function (media, insertBefore, successCallback, autoplay) {
+        var queueItem, request;
+        if(this.castMedia.queueInsertAndPlayItem){
+
+          queueItem = new chrome.cast.media.QueueItem(this._localMediaToCastMedia(media[0]));
+          queueItem.autoplay = autoplay;
+          queueItem.preloadTime = this._preloadTime;
+
+          request = new chrome.cast.media.QueueInsertAndPlayRequest(queueItem);
+          request.insertBefore = insertBefore;
+
+          this.castMedia.queueInsertAndPlayItem(request, this._onGenericSuccess.bind(this),
+              this._onGenericFailure.bind(this));
+        } else {
+          //Convert local media items to cast media items
+          var itemsToAdd = [];
+          for (var i = 0; i < media.length; i++) {
+            queueItem = new chrome.cast.media.QueueItem(this._localMediaToCastMedia(media[i]));
+            queueItem.autoplay = autoplay;
+            queueItem.preloadTime = this._preloadTime;
+            itemsToAdd.push(queueItem);
+          }
+
+          //Create the insert request
+          request = new chrome.cast.media.QueueInsertItemsRequest(itemsToAdd);
+          request.insertBefore = insertBefore;
+          if (successCallback === null) {
+            successCallback = this._onGenericSuccess.bind(this);
+          }
+
+          //Insert the media
+          this.castMedia.queueInsertItems(request, successCallback,
+              this._onGenericFailure.bind(this));
+        }
+      },
+
+      castQueuePlayItem: function (itemId) {
+        if (this.hasCastMedia) {
+          this.castMedia.queueJumpToItem(itemId, this._onGenericSuccess.bind(this),
+              this._onGenericFailure.bind(this));
+        }
+      },
+
+      /**
+       * Removes items from queue
+       *
+       * @param itemIds {array} itemIds of elements to remove
+       */
+      castQueueRemoveItems: function (itemIds) {
+        var removeRequest = new chrome.cast.media.QueueRemoveItemsRequest(itemIds);
+        this.castMedia.queueRemoveItems(removeRequest
+            , this._onGenericSuccess.bind(this)
+            , this._onGenericFailure.bind(this));
+      },
+
+      castQueueMoveItem: function (itemId, newIndex) {
+        this.castMedia.queueMoveItemToNewIndex(itemId, newIndex, this._onGenericSuccess.bind(this),
+            this._onGenericFailure.bind(this));
+      },
+
+      mediaLoaded: function () {
+        console.log('Media finished loading locally');
+        this._resetState();
+        this._fireIronEvent({
+          'detail': {
+            'name': 'media-action',
+            'data': {
+              'action': 'mediaLoaded'
+            }
+          }
+        });
+      },
+
+      isMediaMatch: function () {
+        return !!(this.castMedia && this.castMedia.media.contentId === this.localMedia.url);
+      },
+
+      urlMatchesLocalMedia: function (url) {
+        return url === this.localMedia.url;
+      },
+      /**
+       * Returns true if cast has a session media and the local media matches remote media
+       */
+      isCastActionable: function (sender) {
+        return !!((this.session && this.hasCastMedia &&
+        sender !== cast.CastManager.SENDER.CHROMECAST));
+      },
+      /************* Control functions ****************/
+
+      /**
+       * Fire a seek iron signals event
+       *
+       * @param time {number} time in seconds to seek to
+       * @param sender {CastManager.SENDER}
+       */
+      seek: function (time, sender) {
+        console.log('Seek: ' + time + ' ' + sender);
+        this._fireIronEvent({
+          'detail': {
+            'name': 'media-action',
+            'data': {
+              'action': 'seek',
+              'currentTime': time,
+              'sender': sender
+            }
+          }
+        });
+
+        if (this.isCastActionable(sender)) {
+          this.showSpinner = true;
+          this.castSeek(time);
+          window.clearInterval(this._timerHandle);
+        }
+      },
+
+      play: function (sender) {
+        console.log('Play: ' + JSON.stringify(sender));
+        this._fireIronEvent({
+          'detail': {
+            'name': 'media-action',
+            'data': {
+              'action': 'play',
+              'sender': sender
+            }
+          }
+        });
+        // If the action is cast actionable, play the cast media
+        if (this.isCastActionable(sender)) {
+          this._showSpinner();
+          this.castPlay();
+        } else if (this.session && this.session.status === chrome.cast.SessionStatus.CONNECTED && !this.hasCastMedia) {
+          // If cast has no media, load the local media before playing it
+          this._showSpinner();
+          this.loadMediaOntoCast(this.localMedia, true);
+        }
+      },
+
+      pause: function (sender) {
+        console.log('Pause: ' + JSON.stringify(sender));
+
+        this._fireIronEvent({
+          'detail': {
+            'name': 'media-action',
+            'data': {
+              'action': 'pause',
+              'sender': sender
+            }
+          }
+        });
+
+        if (this.isCastActionable(sender)) {
+          this.castPause();
+        }
+      },
+
+      setVolume: function (volume, sender) {
+        console.log('Setting volume: ' + volume);
+
+        // Fire an event to notify elements of the volume change
+        this._fireIronEvent({
+          'detail': {
+            'name': 'media-action',
+            'data': {
+              'action': 'volume',
+              'volume': volume,
+              'sender': sender
+            }
+          }
+        });
+        if (this.isCastActionable(sender)) {
+          this.castVolume(volume);
+        }
+      },
+
+      setDuration: function (time) {
+        console.log('Setting duration: ' + time);
+        this.localMedia.setDuration(time);
+      },
+
+      showPreloadDialog: function (media, time) {
+        this._fireIronEvent({
+          'detail': {
+            'name': 'media-action',
+            'data': {
+              'action': 'preload',
+              'media': media,
+              'timeRemaining': timeRemaining
+            }
+          }
+        });
+      },
+
+      hidePreloadDialog: function () {
+        console.log('Hiding preload dialog');
+        this._fireIronEvent({
+          'detail': {
+            'name': 'media-action',
+            'data': {
+              'action': 'hideDialog'
+            }
+          }
+        });
+      },
+
+      setAutoPlayTrigger: function (trigger) {
+        console.log('Setting auto play trigger to: ' + trigger);
+        this._fireIronEvent({
+          'detail': {
+            'name': 'media-action',
+            'data': {
+              'action': 'autoPlayTrigger',
+              'value': trigger
+            }
+          }
+        });
+      },
+      /************* Cast control methods *************/
+      castSeek: function (time) {
+        var request = new chrome.cast.media.SeekRequest();
+        request.currentTime = Math.round(time);
+        this.castMedia.seek(request,
+            this._onGenericSuccess.bind(this), this._onGenericFailure.bind(this));
+      },
+
+      castPause: function (data) {
+        this.castMedia.pause(data, this._onGenericSuccess.bind(this),
+            this._onGenericFailure.bind(this));
+      },
+
+      castPlay: function (data) {
+        this.castMedia.play(data, this._onGenericSuccess.bind(this),
+            this._onGenericFailure.bind(this));
+      },
+
+      castVolume: function (volume) {
+        var vol = new chrome.cast.Volume(volume, false);
+        var request = new chrome.cast.media.VolumeRequest(vol);
+        this.castMedia.setVolume(request, this._onGenericSuccess.bind(this),
+            this._onGenericFailure.bind(this));
+      },
+
+      castSetRepeat: function (mode) {
+        this.castMedia.queueSetRepeatMode(mode, this._onGenericSuccess.bind(this),
+            this._onGenericFailure.bind(this));
+      },
+
+      /************* Helper methods *******************/
+      _hideSpinner: function () {
+        this.set('showSpinner', false);
+        this._fireIronEvent({
+          'detail': {
+            'name': 'media-action',
+            'data': {
+              'action': 'spinner',
+              'show': false
+            }
+          }
+        });
+      },
+
+      _showSpinner: function () {
+        this.set('showSpinner', true);
+        this._fireIronEvent({
+          'detail': {
+            'name': 'media-action',
+            'data': {
+              'action': 'spinner',
+              'show': true
+            }
+          }
+        })
+      },
+
+      /********************* METHODS TO CONVERT BETWEEN LOCAL MEDIA AND CAST MEDIA ***************/
+
+      _castMediaToLocalMedia: function (media) {
+        return new cast.MediaItem({
+          'title': media.media.metadata.title,
+          'url': media.media.contentId,
+          'thumbnailImageUrl': media.media.metadata.images[0].url,
+          'studio': media.media.metadata.subtitle,
+          'description': media.media.metadata.description,
+          'queueId': media.itemId,
+          'duration': media.media.duration
+        });
+      },
+
+      _localMediaToCastMedia: function (media) {
+        var castMedia = new chrome.cast.media.MediaInfo(media.url);
+
+        castMedia.metadata = new chrome.cast.media.GenericMediaMetadata();
+        castMedia.metadata.metadataType = chrome.cast.media.MetadataType.GENERIC;
+        castMedia.contentType = this._fileExtensionToMimeType(media.url);
+
+        castMedia.metadata.title = media.title;
+        castMedia.metadata.subtitle = media.studio;
+        castMedia.metadata.images = [{'url': media.thumbnailImageUrl}];
+        castMedia.metadata.description = media.description;
+
+        return castMedia;
+      },
+
+      _fileExtensionToMimeType: function (url) {
+        var extension = url.split('.').pop();
+        var mimeType;
+        switch (extension) {
+          case 'mp4':
+            mimeType = 'video/mp4';
+            break;
+          case 'ogv':
+            mimeType = 'video/ogg';
+            break;
+          case 'webm':
+            mimeType = 'video/webm';
+            break;
+          case 'mp3':
+            mimeType = 'audio/mpeg';
+            break;
+          case 'wav':
+            mimeType = 'audio/wav';
+            break;
+        }
+        return mimeType;
+      },
+
+      _castPlayerStateToLocalPlayerState: function (state) {
+        switch (state) {
+          case chrome.cast.media.PlayerState.PAUSED:
+            return cast.MediaItem.STATE.PAUSED;
+            break;
+          case chrome.cast.media.PlayerState.PLAYING:
+            return cast.MediaItem.STATE.PLAYING;
+            break;
+          case chrome.cast.media.PlayerState.BUFFERING:
+            return cast.MediaItem.STATE.BUFFERING;
+            break;
+          default:
+            return cast.MediaItem.STATE.PAUSED;
+        }
+      },
+
+
+      _queueSwitchFromLocalToCast: function (queueItems) {
+        this._savedQueue = this.queue;
+        this.set('queue', new cast.QueueManager());
+        this.queue.parseCastQueue(queueItems);
+      },
+
+      _resetState: function () {
+        this._hideSpinner();
+        this.set('countdownToNextMediaItem', null);
+        this.set('nextQueueMediaItem', null);
+      },
+
+      _fireIronEvent: function (event) {
+        var ironEvent = new CustomEvent('iron-signal', event);
+        document.dispatchEvent(ironEvent);
+      },
+
+      /**
+       * Converts local queue repeat mode and shuffle mode to {chrome.cast.media.RepeatMode}
+       *
+       * @param queue
+       * @returns {*}
+       */
+      _localQueueToCastQueueRepeatMode: function (queue) {
+        if (queue.shuffle) {
+//          return chrome.cast.media.RepeatMode.ALL_AND_SHUFFLE;
+          return 'REPEAT_ALL_AND_SHUFFLE';
+        } else {
+          switch (queue.repeatMode) {
+            case cast.QueueManager.REPEAT_MODE.NONE:
+              return chrome.cast.media.RepeatMode.OFF;
+              break;
+            case cast.QueueManager.REPEAT_MODE.REPEAT_ALL:
+              return chrome.cast.media.RepeatMode.ALL;
+              break;
+            case cast.QueueManager.REPEAT_MODE.REPEAT_SINGLE:
+              return chrome.cast.media.RepeatMode.SINGLE;
+              break;
+          }
+        }
+      },
+
+      _castQueueRepeatModeToLocalRepeatMode: function (mode) {
+        switch (mode) {
+          case chrome.cast.media.RepeatMode.OFF:
+            return cast.QueueManager.REPEAT_MODE.NONE;
+            break;
+          case chrome.cast.media.RepeatMode.ALL:
+            return cast.QueueManager.REPEAT_MODE.REPEAT_ALL;
+            break;
+          case chrome.cast.media.RepeatMode.SINGLE:
+            return cast.QueueManager.REPEAT_MODE.REPEAT_SINGLE;
+            break;
+          default:
+            return cast.QueueManager.REPEAT_MODE.REPEAT_ALL;
+        }
+      },
+
+      _castQueueRepeatModeToLocalShuffle: function (mode) {
+        return mode === chrome.cast.media.RepeatMode.ALL_AND_SHUFFLE;
+      }
+    });
+
+    /**
+     * Defines the sender of the request
+     *
+     * @type {{LOCAL: number, CHROMECAST: number}}
+     */
+    CastManager.SENDER = {
+      'LOCAL': 0, //local video
+      'CHROMECAST': 1, //chromecast events ie. for multiple senders
+      'CASTCONTROLLER': 2 //cast controller bar
+    };
+    CastManager.CONNECTION_STATUS = {
+      'DISCONNECTED': 0,
+      'CONNECTING': 1,
+      'CONNECTED': 2
+    };
+    CastManager.QUEUE_REPEAT_MODE = {
+      'NONE': 0,
+      'REPEAT_ALL': 1,
+      'REPEAT_SINGLE': 2
+    };
+
+    cast.CastManager = CastManager;
+  })();
+</script>

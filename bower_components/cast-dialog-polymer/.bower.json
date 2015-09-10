@@ -1,0 +1,35 @@
+{
+  "name": "cast-dialog-polymer",
+  "description": "cast dialog element",
+  "keywords": [
+    "cast",
+    "dialog",
+    "polymer"
+  ],
+  "license": "Apache-2.0",
+  "ignore": [
+    "**/.*",
+    "node_modules",
+    "bower_components",
+    "test",
+    "tests"
+  ],
+  "dependencies": {
+    "iron-icons": "polymerElements/iron-icons#~1.0.3",
+    "iron-signals": "polymerElements/iron-signals#~1.0.2",
+    "paper-styles": "polymerElements/paper-styles#~1.0.11",
+    "iron-flex-layout": "polymerElements/iron-flex-layout#~1.0.3",
+    "cast-theme-polymer": "googlecast/cast-theme-polymer"
+  },
+  "homepage": "https://github.com/googlecast/cast-dialog-polymer",
+  "_release": "a0de930f88",
+  "_resolution": {
+    "type": "branch",
+    "branch": "master",
+    "commit": "a0de930f88af0fdebda07586cf6f76e4e4b117fc"
+  },
+  "_source": "git://github.com/googlecast/cast-dialog-polymer.git",
+  "_target": "*",
+  "_originalSource": "googlecast/cast-dialog-polymer",
+  "_direct": true
+}

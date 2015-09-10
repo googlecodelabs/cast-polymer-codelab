@@ -16,7 +16,7 @@
     "tests"
   ],
   "dependencies": {
-"polymer": "polymer/Polymer#~1.1.3",
+    "polymer": "polymer/Polymer#~1.1.3",
     "iron-flex-layout": "polymerElements/iron-flex-layout#~1.0.3",
     "cast-button-polymer": "googlecast/cast-button-polymer#~1.0.1",
     "paper-ripple": "polymerElements/paper-ripple#~1.0.2",
@@ -25,7 +25,11 @@
     "paper-menu": "polymerElements/paper-menu#~1.1.0",
     "paper-item": "polymerElements/paper-item#~1.0.2",
     "iron-icons": "polymerElements/iron-icons#~1.0.3",
-    "cast-theme-polymer": "pengying/cast-theme-polymer",
-    "neon-animation": "polymerElements/neon-animation#~1.0.6"
+    "cast-theme-polymer": "googlecast/cast-theme-polymer",
+    "neon-animation": "polymerElements/neon-animation#~1.0.6",
+    "cast-manager-polymer": "googlecast/cast-manager-polymer#~1.0.2",
+    "cast-dialog-polymer": "googlecast/cast-dialog-polymer",
+    "cast-video-polymer": "googlecast/cast-video-polymer",
+    "cast-controller-bar-polymer": "googlecast/cast-controller-bar-polymer"
   }
 }
