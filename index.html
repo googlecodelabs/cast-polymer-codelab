@@ -9,6 +9,9 @@
   <link rel="import" href="elements/video-carousel.html">
   <link rel="import" href="elements/video-details.html">
 
+
+  <link rel="import" href="bower_components/cast-manager-polymer/cast-manager.html">
+
   <link rel="stylesheet" href="css/common.css">
   <link rel="stylesheet" media="only screen and (max-width: 1109px)"
         href="css/max-1110-styles.css">
@@ -93,12 +96,33 @@
 <body class="fullbleed layout vertical" id="body">
 
 <template id="t" is="dom-bind">
-</template>
-
+  <paper-header-panel class="flex" mode="scroll">
+    <div class="paper-header center-box-shadow width">
+      <img src="images/logo.png">
+    </div>
+    <div class="center-box-shadow width bgcolor">
+      <cast-manager app-id="4F8B3483"
+                      cast-available="{{castAvailable}}"
+                      connection-status="{{connectionStatus}}"
+                      local-media="{{localMedia}}"
+                      queue="{{queue}}"
+                      volume="{{volume}}"
+                      has-cast-media="{{hasCastMedia}}"
+                      cast-device-name="{{castDeviceName}}"
+                      current-time="{{currentTime}}"
+                      is-fullscreen="{{isFullscreen}}"
+                      show-spinner="{{showSpinner}}"
+                      next-queue-media-item="{{nextQueueMediaItem}}"
+                      countdown-to-next-media-item="{{countdownToNextMediaItem}}">
+      </cast-manager>
+    </div>
+  </paper-header-panel>
+</template> 
 </body>
 <script>
   var t = document.querySelector('#t');
   t.addEventListener('dom-change', function () {
+    castManager = document.querySelector('cast-manager');
   });
 </script>
 </body>
