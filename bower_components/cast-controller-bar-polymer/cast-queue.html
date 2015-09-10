@@ -1,0 +1,476 @@
+<!--
+Copyright 2014 Google Inc. All Rights Reserved.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+-->
+
+<link rel="import" href="../polymer/polymer.html">
+
+<link rel="import" href="../paper-icon-button/paper-icon-button.html">
+<link rel="import" href="../iron-icons/av-icons.html">
+<link rel="import" href="../iron-flex-layout/classes/iron-flex-layout.html">
+<link rel="import" href="../cast-theme-polymer/cast-theme.html">
+
+<link rel="import" href="cast-queue-element.html">
+
+
+<!--
+`cast-queue` is an element to display the current queue.  It supports drag and drop
+reordering, deletion and easy manipulation of the queue properties.
+
+The cast-queue will automatically display for a second anytime a queue action is taken.
+
+It's recommended to use the `cast-queue` element as a child of the cast-controller-bar, but you can
+also write your own code to manager it's display state.
+
+Example:
+
+    <cast-manager queue-manager="queue-manager"
+                app-id="4F8B3483"
+                cast-available="{{castAvailable}}"
+                connection-status="{{connectionStatus}}"
+                local-media="{{localMedia}}"
+                queue="{{queue}}">
+      <cast-queue queue="[[ queue ]]" local-media="[[localMedia]]"></cast-queue>
+    </cast-manager>
+-->
+<dom-module id="cast-queue">
+  <style>
+    :host {
+      position: absolute;
+      bottom: -130px;
+      height: 130px;
+      width: 400px;
+      overflow-x: scroll;
+      z-index: 2000000;
+
+      background: var(--secondary-color);
+      @apply(--transition-base-300);
+      @apply(--paper-font-base);
+    }
+
+    :host(.min) {
+      transform: translateY(-50px);
+    }
+
+    :host(.max) {
+      transform: translate3d(0, -130px, 0);
+    }
+
+    :host(.max) #queue_content {
+      opacity: 1;
+    }
+
+    #queue_content {
+      height: 80px;
+      width: auto;
+      white-space: nowrap;
+      overflow-y: hidden;
+      margin-left: 15px;
+      opacity: 0;
+      @apply(--transition-base-300);
+    }
+
+    #queue_control_bar {
+      margin-left: 20px;
+      height: 50px;
+    }
+
+    #queue_controls {
+      height: 50px;
+      position: absolute;
+      right: 0;
+      top: 0;
+      margin-right: 20px;
+      opacity: 0;
+      @apply(--transition-base-300);
+    }
+
+    #queue_controls.show {
+      opacity: 1;
+    }
+
+    label {
+      @apply(--font-base-100);
+      color: var(--selected-text-color);
+    }
+
+    .border-left {
+      border-left: 2px solid #000000;
+    }
+
+    .border-right {
+      border-right: 2px solid #000000;
+    }
+
+    .icon-button {
+      color: var(--icon-fill-color);
+      --iron-icon-height: 20px;
+      --iron-icon-width: 20px;
+    }
+
+    .icon-button:hover {
+      color: var(--hover-over-color);
+    }
+
+    .icon-button.enabled {
+      color: var(--icon-enabled-color);
+    }
+  </style>
+  <template>
+    <div id="queue_control_bar" class="layout horizontal center">
+      <label>Queue - (<span>[[items.length]]</span>) Videos</label>
+    </div>
+    <div id="queue_controls" class="layout horizontal center">
+      <paper-icon-button id="button_repeat" icon$="[[_computeRepeatIcon(repeatMode)]]"
+                         class$="[[_computeRepeatClass(repeatMode)]]"
+                         on-click="_queueToggleRepeatMode"></paper-icon-button>
+      <paper-icon-button id="button_shuffle" icon="av:shuffle"
+                         class$="[[_computeShuffleClass(shuffle)]]"
+                         on-click="_queueToggleShuffle"></paper-icon-button>
+      <paper-icon-button id="button_delete"
+                         icon="delete"
+                         class="icon-button"
+                         on-click="_queueEmpty"></paper-icon-button>
+    </div>
+    <div id="queue_content">
+      <template is="dom-repeat" items="[[ items ]]">
+        <cast-queue-element media="[[ item ]]" local-media="[[localMedia]]"
+                            on-dragover="_dragoverHandler" on-drop="_dropHandler"
+                            on-dragstart="_dragstartHandler" on-dragleave="_dragleaveHandler"
+                            draggable="true">
+        </cast-queue-element>
+      </template>
+    </div>
+  </template>
+  <script>
+    Polymer({
+      is: 'cast-queue',
+      properties: {
+        /**
+         * cast-manager queue object.  This element observes the changes in queue and computes
+         * items, repeatMode, and shuffle to update the UI.
+         */
+        queue: {
+          observer: '_queueListener'
+        },
+        /**
+         * currently playing media item from cast-manager
+         */
+        localMedia: Object,
+
+        /**
+         * Array of media items from the queue
+         */
+        items: {
+          type: Array,
+          value: function() {
+            return [];
+          },
+          reflect: true
+        },
+
+        /**
+         * Number to indicate repeatMode
+         */
+        repeatMode: {
+          type:Number,
+          value:0
+        },
+
+        /**
+         * Boolean to indicate shuffle method
+         */
+        shuffle: {
+          type:Boolean,
+          value: false
+        },
+
+        /**
+         * Hide timeout
+         */
+        hideTimeout: {
+          type: Number,
+          value: 2000
+        }
+      },
+
+      /**
+       * Handle to cancel async tasks.
+       */
+      _hideHandle: null,
+
+
+      /**
+       * Maximizes the queue window.
+       */
+      maximize: function () {
+        this.classList.remove('min');
+        this.classList.add('max');
+        this.$.queue_controls.classList.add('show');
+        this._cancelHide();
+      },
+
+      /**
+       * Minimizes the queue window to only display the title and number of elements
+       */
+      minimize: function () {
+        this.classList.add('min');
+        this.classList.remove('max');
+        this.$.queue_controls.classList.remove('show');
+        this._cancelHide();
+      },
+
+      /**
+       * Hides the queue window
+       */
+      hide: function () {
+        this.classList.remove('min');
+        this.classList.remove('max');
+        this.$.queue_controls.classList.remove('show');
+        this._cancelHide();
+      },
+
+      /**
+       * Sets the queue window width
+       */
+      setWidth: function (width) {
+        this.style.width = width + 'px';
+      },
+
+      /**
+       * Resets the width to empty
+       */
+      resetWidth: function () {
+        this.style.width = '';
+      },
+
+      /**
+       * Cancels the async task to hide the element
+       * @private
+       */
+      _cancelHide: function() {
+        if(this._hideHandle) {
+          this.cancelAsync(this._hideHandle);
+        }
+        this._hideHandle = null;
+      },
+
+      /**
+       * Handles dragover events and updates the controller bar element border to indicate where
+       * in the queue media will be inserted.
+       *
+       * @param event
+       * @param detail
+       * @param sender
+       */
+      _dragoverHandler: function (event) {
+        event.preventDefault();
+        //Calculate mouse x and element bounds
+        var mouseX = event.clientX;
+        var currElement = event.currentTarget.getBoundingClientRect();
+        //If dragging element is < 50% of the way down of the element below, add a top border
+        if (mouseX < currElement.left + currElement.width / 2) {
+          event.currentTarget.classList.add('border-left');
+          event.currentTarget.classList.remove('border-right');
+        } else {
+          //Otherwise add a bottom border
+          event.currentTarget.classList.add('border-right');
+          event.currentTarget.classList.remove('border-left');
+        }
+
+        //TODO(pying): fix so 2 elements share the same border bar.
+      },
+      /**
+       * Handles the drop event, calculates where in the queue the element should be moved to
+       * and issues the request.
+       *
+       * @param event
+       * @param detail
+       * @param sender
+       */
+      _dropHandler: function (event) {
+        //remove all borders
+        event.currentTarget.classList.remove('border-left');
+        event.currentTarget.classList.remove('border-right');
+        var draggingId = parseInt(event.dataTransfer.getData('text/plain'));
+        if (draggingId != event.currentTarget.media.queueId) {
+          //Get mouse position and element bounds
+          var mouseX = event.clientX;
+          var currElement = event.currentTarget.getBoundingClientRect();
+          //Get the index of the background element
+          var index = this.queue.items.indexOf(event.currentTarget.media);
+          //If the drop occurred on the bottom half of the element insert it after
+          if (mouseX >= currElement.left + currElement.width / 2) {
+            index++;
+          }
+          this._queueMoveItemToNewIndex(draggingId, index);
+        }
+      },
+
+      /**
+       * When the mouse leaves the background element, remove all borders
+       *
+       * @param event
+       * @param detail
+       * @param sender
+       */
+      _dragleaveHandler: function (event) {
+        event.currentTarget.classList.remove('border-left');
+        event.currentTarget.classList.remove('border-right');
+      },
+
+      /**
+       * When dragging starts store the element id
+       *
+       * @param event
+       * @param detail
+       * @param sender
+       */
+      _dragstartHandler: function (event) {
+        var img = event.currentTarget.$.thumbnail;
+        event.dataTransfer.setDragImage(img, 54, 35);
+        event.dataTransfer.setData('text/plain', event.currentTarget.media.queueId);
+      },
+
+      /**
+       * Computes repeat icon
+       */
+      _computeRepeatIcon: function (repeatMode) {
+        return repeatMode < 2 ? 'av:repeat' : 'av:repeat-one';
+      },
+
+      /**
+       * Computes repeat icon color
+       */
+      _computeRepeatClass: function (repeatMode) {
+        return 'layout row center icon-button ' + (repeatMode > 0 ? 'enabled' : '');
+      },
+
+      /**
+       * Computes shuffle icon color
+       */
+      _computeShuffleClass: function (shuffle) {
+        return 'layout row center icon-button ' + (shuffle ? 'enabled' : '');
+      },
+
+      /**
+       * Fires an event to request to empty the queue
+       */
+      _queueEmpty: function () {
+        this.fire('queueEvent', {
+          type: 'queueEmpty'
+        });
+      },
+
+      /**
+       * Fires an event to toggle queue shuffling
+       */
+      _queueToggleShuffle: function () {
+        this.fire('queueEvent', {
+          type: 'queueToggleShuffle'
+        });
+      },
+
+      /**
+       * Fires an event to toggle queue repeat
+       */
+      _queueToggleRepeatMode: function () {
+        this.fire('queueEvent', {
+          type: 'queueToggleRepeatMode'
+        });
+      },
+
+      /**
+       * Fires an event to move a queue item to a new index
+       */
+      _queueMoveItemToNewIndex: function(itemId, newIndex) {
+        this.fire('queueEvent', {
+          type: 'queueMoveItemToNewIndex',
+          args: [itemId, newIndex]
+        })
+      },
+
+      /**
+       * Updates the local property repeat mode for binding
+       */
+      _notifyRepeatModeChanged: function () {
+        this.set('repeatMode', this.queue.repeatMode);
+      },
+
+      /**
+       * Updates the local property items for binding
+       */
+      _notifyItemsChanged: function (event) {
+        //Copy over changes array mutation to local items.
+        if(!event.detail.path) {
+          //Handle when queue array is deleted
+          this.set('items', []);
+        } else if (event.detail.path ==='items.splices') {
+          var keySplices = event.detail.value.keySplices;
+          var indexSplices = event.detail.value.indexSplices;
+          if(keySplices) {
+            keySplices.forEach(function(keySplice) {
+              if (keySplice.added.length > 0) {
+                this.splice.apply(this, ['items', keySplice.index, 0].concat(keySplice.added));
+              } else if (keySplice.removed.length > 0) {
+                this.splice('items', keySplice.index, keySplice.removed.length);
+              }
+            }.bind(this));
+          } else if (indexSplices) {
+            indexSplices.forEach(function(indexSplice) {
+              if(indexSplice.addedCount > 0) {
+                var queueSlice = this.queue.items.slice(indexSplice.index,
+                    indexSplice.index + indexSplice.addedCount);
+                this.splice.apply(this,
+                    ['items', indexSplice.index, indexSplice.removed.length].concat(queueSlice));
+              } else if (indexSplice.removed.length > 0) {
+                this.splice('items', indexSplice.index, indexSplice.removed.length);
+              }
+            }.bind(this));
+          }
+        }
+      },
+
+      /**
+       * Updates the local property shuffle for binding
+       */
+      _notifyShuffleChanged: function (e) {
+        this.set('shuffle', this.queue.shuffle);
+      },
+
+      /**
+       * Set up explicit sub property change listeners for queue repeatMode, items, and shuffle.
+       *
+       * @param newVal
+       * @param oldVal
+       * @private
+       */
+      _queueListener: function (newVal, oldVal) {
+        if (newVal) {
+          //When assigned a new queue, copy over the queue
+          this.set('items', this.queue.items.slice());
+
+          this.listen(this.queue, 'repeat-mode-changed', '_notifyRepeatModeChanged');
+          this.listen(this.queue, 'items-changed', '_notifyItemsChanged');
+          this.listen(this.queue, 'shuffle-changed', '_notifyShuffleChanged');
+        }
+        if (oldVal) {
+          this.unlisten(oldVal, 'repeat-mode-changed', '_notifyRepeatModeChanged');
+          this.unlisten(oldVal, 'items-changed', '_notifyItemsChanged');
+          this.unlisten(oldVal, 'shuffle-changed', '_notifyShuffleChanged');
+        }
+      }
+    });
+  </script>
+</dom-module>

@@ -1,0 +1,476 @@
+<!--
+Copyright 2014 Google Inc. All Rights Reserved.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+-->
+<link rel="import" href="../polymer/polymer.html">
+
+<!--
+An Object representing the queue of media elements.
+-->
+
+<script>
+  var cast = window.cast || {};
+
+  (function () {
+    'use strict';
+
+    var QueueManager = Polymer({
+      is: 'queue-manager',
+      properties: {
+
+        /**
+         * Array of {MediaItem} elements
+         *
+         * @type {Array}
+         */
+        items: {
+          type: Array,
+          notify: true,
+          value: function () {
+            return [];
+          }
+        },
+
+        /**
+         * Type of repetition: none, repeat singleitem , or repeat the queue.
+         *
+         * @type {number}
+         */
+        repeatMode: {
+          type: Number,
+          notify: true,
+          value: 0
+        },
+
+        /**
+         * Shuffle queue playback
+         *
+         * @type {boolean}
+         */
+        shuffle: {
+          type: Boolean,
+          notify: true,
+          value: false
+        },
+
+        /**
+         * Index of currently playing media item
+         *
+         * @type {number}
+         */
+        currentIndex: {
+          type: Number,
+          notify: true,
+          value: null
+        },
+
+        for: {
+          type: String
+        }
+      },
+
+
+      /**
+       * Index of next media item for shuffle, repeat.
+       * @type {number}
+       */
+      _nextIndex: null,
+      /**
+       * Used to assign unique IDs to items
+       *
+       * @type {number}
+       */
+      _queueIdCounter: 1000,
+
+      /**
+       * Array of indicies of recently played items for shuffle playback
+       *
+       * @type {Array}
+       */
+      _indexOfPlayedItems: [],
+
+      /**
+       * Max array size of indexOfPlayedItems array
+       *
+       * @type {number}
+       */
+      SHUFFLE_PLAYED_ITEMS_MAX_SIZE: 8,
+
+      /**
+       * Max number of retries before accepting the next shuffle index
+       *
+       * @type {number}
+       */
+      MAX_SHUFFLE_RETRIES: 8,
+      /**
+       * Erases the queue and resets queue current Index
+       */
+      empty: function () {
+        this.set('items', []);
+        this.set('currentIndex', null);
+      },
+
+      getLength: function () {
+        return this.items.length;
+      },
+
+      /**
+       * Gets the index of an element in the array given it's ID.  Returns -1 if
+       * ID doesn't exist
+       *
+       * @param id
+       * @returns {number}
+       */
+      getIndexOfId: function (id) {
+        for (var i = 0; i < this.items.length; i++) {
+          if (this.items[i].queueId === id) {
+            return i;
+          }
+        }
+        return -1;
+      },
+
+      /**
+       * Gets an element in the queue by it's ID
+       *
+       * @param id
+       * @returns {*}
+       */
+      getItemById: function (id) {
+        return this.items[this.getIndexOfId(id)];
+      },
+
+      /**
+       * Returns the current media item.  If media items aren't defined t
+       *
+       * @returns {*}
+       */
+      getCurrentItem: function () {
+        if (this.currentIndex === null) {
+          this.setCurrentIndex(this._getIndexOfNextItem());
+        }
+        return this.items[this.currentIndex];
+      },
+
+      /**
+       * Gets the next item
+       */
+      getNextItem: function () {
+        if (this._nextIndex === null) {
+          this.setCurrentIndex(this._getIndexOfNextItem());
+        } else {
+          this.setCurrentIndex(this._nextIndex);
+        }
+        this._nextIndex = null;
+        return this.getCurrentItem();
+      },
+
+      /**
+       * Peeks at the next item
+       */
+      peekNextItem: function () {
+        if (this._nextIndex === null) {
+          this._nextIndex = this._getIndexOfNextItem();
+        }
+        return this.items[this._nextIndex];
+      },
+
+      /**
+       * Resets _nextIndex
+       */
+      resetNextItem: function () {
+        this._nextIndex = null;
+      },
+
+      /**
+       * Gets the index of the next item based on shuffle and repeat mode selections
+       *
+       * @returns {number} index of next item and -1 if end of queue.
+       */
+      _getIndexOfNextItem: function () {
+        //Check that the queue isn't empty
+        if (this.currentIndex !== null && this.items.length > 0) {
+          var offset = 1;
+
+          //If shuffle is enabled, generate random offset
+          if (this.shuffle) {
+            var count = 0;
+
+            //If the current list of played items is > max size remove the first one
+            if (this._indexOfPlayedItems.length > this.SHUFFLE_PLAYED_ITEMS_MAX_SIZE) {
+              this._indexOfPlayedItems.shift();
+            }
+
+            //Get next random index
+            var randomIndex = Math.floor(Math.random() * this.items.length);
+
+            //Try to ensure the random index isn't a recently played item
+            while (randomIndex === this.currentIndex
+            || (this._indexOfPlayedItems.indexOf(randomIndex) != -1
+            && count < this.MAX_SHUFFLE_RETRIES)) {
+              randomIndex = Math.floor(Math.random() * this.items.length);
+              count++;
+            }
+
+            //Figure out diff from currentIndex
+            offset = randomIndex - this.currentIndex;
+
+            //Add index to list of recently played items
+            this._indexOfPlayedItems.push(randomIndex);
+          }
+
+          //Based on the repeat mode, determine the index of the next item
+          switch (this.repeatMode) {
+            case QueueManager.REPEAT_MODE.NONE:
+              var nextIndex = this.currentIndex + offset;
+              if (this.currentIndex !== null && nextIndex < this.items.length) {
+                return nextIndex;
+              }
+              break;
+            case QueueManager.REPEAT_MODE.REPEAT_SINGLE:
+              return this.currentIndex;
+              break;
+            case QueueManager.REPEAT_MODE.REPEAT_ALL:
+              return (this.currentIndex + offset) % this.items.length;
+              break;
+          }
+        }
+        return null;
+      },
+
+      /**
+       * Moves an item to a new index
+       *
+       * @param queueId item ID to move
+       * @param newIndex new index to place the item
+       */
+      moveItemToNewIndex: function (queueId, newIndex) {
+        var index = this.getIndexOfId(queueId);
+        if (index !== -1) {
+          //Splice item out
+          var item = this.splice('items', index, 1);
+
+          //Update index if necessary
+          if (index < newIndex) {
+            newIndex--;
+          }
+
+          //Subtract 1 from current index when removed since it's added back in
+          //By insert
+          if (index < this.currentIndex) {
+            this.currentIndex--;
+          }
+
+          //Re-insert item
+          this.insertItemsAtIndex(item, newIndex);
+        }
+      },
+
+      /**
+       * Removes item with given itemId
+       *
+       * @param {number} itemId
+       */
+      removeItemWithId: function (itemId) {
+        var index = this.getIndexOfId(itemId);
+
+        //If item exists remove it
+        if (index !== -1) {
+          this.splice('items', index, 1);
+          if (index <= this.currentIndex) {
+            this.currentIndex--;
+          }
+        }
+
+        this.resetNextItem();
+      },
+
+      /**
+       * Assigns an id to an item inserted into the array
+       *
+       * @param {cast.Media} media to assign a queue Id to
+       * @returns {media}
+       */
+      _assignQueueId: function (media) {
+        //If the media element has no queueId, assign it one and increment the queueIdCounter
+        if (!media.queueId) {
+          media.setQueueId(this._queueIdCounter);
+          this._queueIdCounter++;
+        }
+        return media;
+      },
+      /**
+       * Toggle the repeat mode
+       */
+      toggleRepeatMode: function () {
+        this.set('repeatMode', (this.repeatMode + 1) %
+            Object.keys(cast.QueueManager.REPEAT_MODE).length);
+        console.log('Toggling queue repeatMode: ' + this.repeatMode);
+        this.resetNextItem();
+      },
+
+      /**
+       * Set the repeat mode
+       */
+      setRepeatMode: function(mode) {
+        this.set('repeatMode', mode);
+      },
+
+      /**
+       * Toggle the shuffle mode
+       */
+      toggleShuffle: function () {
+        this.set('shuffle', !this.shuffle);
+        console.log('Toggling shuffle: ', this.shuffle);
+        this.resetNextItem();
+      },
+
+      /**
+       * Set the shuffle
+       */
+      setShuffle: function(shuffle) {
+        this.set('shuffle', shuffle);
+      },
+
+      /**
+       * Add a new media item clone to the queue.  Returns the new size of the queue.
+       *
+       * @param media
+       * @returns {number} new size of queue
+       */
+      pushItem: function (media) {
+        if (this.currentIndex === null && media !== null) {
+          this.currentIndex = 0;
+        }
+        var cloneItem = new cast.MediaItem(media);
+        cloneItem = this._assignQueueId(cloneItem);
+        //assign a queue id and add it to the queue
+        this.push('items', cloneItem);
+
+        this.resetNextItem();
+        return this.items.length;
+      },
+
+      /**
+       * Add an array of elements to the queue.  A copy is made of these elements so
+       * it doesn't alter the original.
+       *
+       * @param {Array} media of cast.Media
+       * @returns {*} length of new array
+       */
+      pushAll: function (media) {
+        if (this.currentIndex === null && media.length > 0) {
+          this.currentIndex = 0;
+        }
+        var copy = [];
+        for (var i = 0; i < media.length; i++) {
+          var currItem = new cast.MediaItem(media[i]);
+          //Assign each element a queue Id
+          currItem = this._assignQueueId(currItem);
+          copy.push(currItem);
+        }
+
+        this.push.apply(this, ['items'].concat(copy));
+
+        this.resetNextItem();
+
+        return this.items.length;
+      },
+
+      /**
+       * Inserts items into queue at specific index
+       *
+       * @param {Array} media to insert
+       * @param {number} index to insert at
+       */
+      insertItemsAtIndex: function (media, index) {
+        //If queue has been cleared reset current Index and insert as first item
+        if (this.currentIndex === null && media.length > 0) {
+          this.currentIndex = 0;
+          index = 0;
+        }
+
+        //Create copy of each item and assign it an id
+        var copy = [];
+        for (var i = 0; i < media.length; i++) {
+          var currItem = new cast.MediaItem(media[i]);
+          //Assign each element a queue Id
+          currItem = this._assignQueueId(currItem);
+          copy.push(currItem);
+        }
+
+        //bump index by number of inserted elements if necessary and handle case where queue is
+        //empty
+        if (this.items.length > 0 && index <= this.currentIndex) {
+          this.currentIndex += copy.length;
+        }
+
+        //splice in each of the elements
+        this.splice.apply(this, ['items', index, 0].concat(copy));
+
+        this.resetNextItem();
+      },
+
+      /**
+       * Generates a queue based on a chromecast queue
+       * @param items
+       */
+      parseCastQueue: function (items) {
+        //If the chromecast queue isn't empty
+        if (items !== null) {
+          //Iterate through the cast queue and update our local dataset
+          for (var i = 0; i < items.length; i++) {
+            if (!this.items[i] || this.items[i].queueId !== items[i].itemId) {
+              this.splice('items', i, 1,
+                  new cast.MediaItem({
+                    'title': items[i].media.metadata.title,
+                    'url': items[i].media.contentId,
+                    'thumbnailImageUrl': items[i].media.metadata.images[0].url,
+                    'studio': items[i].media.metadata.subtitle,
+                    'description': items[i].media.metadata.description,
+                    'queueId': items[i].itemId
+                  }));
+            }
+          }
+          //Remove remaining media items that don't match
+          if(this.items.length > items.length) {
+            this.splice('items', i, this.items.length - i);
+          }
+        } else {
+          //Otherwise empty the local queue
+          this.empty();
+        }
+      },
+
+      /**
+       * Sets the queue currentIndex
+       * @param index
+       */
+      setCurrentIndex: function(index) {
+        if(index < this.items.length  && index >= 0) {
+          this.set('currentIndex', index);
+          this.resetNextItem();
+        }
+      }
+    });
+
+    QueueManager.REPEAT_MODE = {
+      'NONE': 0,
+      'REPEAT_ALL': 1,
+      'REPEAT_SINGLE': 2
+    };
+
+    cast.QueueManager = QueueManager;
+  })();
+</script>

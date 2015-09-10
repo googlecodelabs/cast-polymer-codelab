@@ -1,0 +1,317 @@
+<!--
+Copyright 2014 Google Inc. All Rights Reserved.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+-->
+<link rel="import" href="../polymer/polymer.html">
+<link rel="import" href="../paper-slider/paper-slider.html">
+<link rel="import" href="../paper-icon-button/paper-icon-button.html">
+<link rel="import" href="../iron-icons/av-icons.html">
+
+<link rel="import" href="../iron-flex-layout/classes/iron-flex-layout.html">
+<link rel="import" href="../paper-styles/shadow.html">
+<link rel="import" href="../cast-theme-polymer/cast-theme.html">
+
+<!--
+`cast-volume-controller` represents the volume button/bar.  It handles both the volume bar in the
+main player bar and in the cast controller element.
+
+It observes volume to determine the appropriate volume to display.  When interacted with it fires a
+mediaActionEvent specifying the updated volume and sender.
+
+Example:
+    <cast-manager queue-manager="queue-manager"
+                app-id="4F8B3483"
+                volume="{{volume}}">
+
+                <cast-volume-controller parent-is-cast-controller="false"
+                          volume="[[ volume ]]"></cast-volume-controller>
+    </cast-manager>
+-->
+<dom-module id="cast-volume-controller">
+  <style>
+    :host {
+      height: var(--volume-height, 39px);
+      width: var(--volume-width, 39px);
+      overflow: visible;
+      -webkit-box-flex: 1;
+      -webkit-flex-grow: 1;
+      -ms-flex-positive: 1;
+      flex-grow: 1;
+      position: relative;
+      display: inline-block;
+      --iron-icon-width:var(--icon-width, 24px);
+      --iron-icon-height:var(--icon-height, 24px);
+    }
+
+    #volume_container {
+      position: absolute;
+      top: -55px;
+      margin-left: -110px;
+      overflow: visible;
+      height: 39px;
+      width: 200px;
+      display: none;
+      opacity: 0;
+      @apply(--transition-base-300);
+    }
+
+    #volume_control {
+      background: var(--background-color);
+      height: 39px;
+      overflow: hidden;
+    }
+
+    #button_volume_control {
+      height: 39px;
+      min-width: 39px;
+      --iron-icon-height:30px;
+      --iron-icon-width:30px;
+      color: var(--icon-third-fill-color);
+      padding: 0;
+      order: 1;
+    }
+
+    #button_volume {
+      color: var(--icon-fill-color);
+    }
+
+    .button-volume {
+      width: var(--volume-width, 39px);
+      height: var(--volume-height, 39px);
+      padding: 0;
+    }
+
+    #button_volume:hover {
+      color: var(--hover-over-color);
+    }
+
+    #slider_volume {
+      min-width: 80px;
+      -webkit-box-ordinal-group: 7;
+      -webkit-order: 6;
+      -ms-flex-order: 6;
+      order: 6;
+      --paper-slider-active-color: var(--icon-third-fill-color);
+      --paper-slider-knob-color: var(--icon-third-fill-color);
+    }
+
+    #volume_control {
+      @apply(--shadow-elevation-8dp);
+    }
+  </style>
+  <template>
+    <paper-icon-button id="button_volume"
+                       class="button-volume flex-1 layout horizontal center-center"
+                       icon="av:volume-up"
+                       on-mouseover="_onMouseOver"
+                       on-mouseout="_onMouseOut"
+                       on-click="_toggleMute"></paper-icon-button>
+    <div id="volume_container"
+         on-mouseover="_onMouseOver"
+         on-mouseout="_onMouseOut">
+      <div id="volume_control" class="layout horizontal center justified">
+        <paper-icon-button id="button_volume_control"
+                           class="button-volume flex-10 layout horizontal center center-justified"
+                           icon="av:volume-up"
+
+                           on-click="_toggleMute"></paper-icon-button>
+        <paper-slider id="slider_volume" value="{{_volumeSliderValue}}">
+        </paper-slider>
+      </div>
+    </div>
+  </template>
+  <script>
+    Polymer({
+      is: 'cast-volume-controller',
+      properties: {
+        /**
+         * Defines whether the controller is being used in the main video player or the cast
+         * controller.
+         */
+        parentIsCastController: {observer: '_parentControllerChanged'},
+
+        /**
+         * Media volume
+         */
+        volume: {
+          type: Number,
+          observer: '_volumeObserver'
+        },
+
+        /**
+         * Time to wait before automatically hiding
+         */
+        visibleDuration: {
+          type: Number,
+          value: 500
+        },
+
+        /**
+         * slider value
+         */
+        _volumeSliderValue: {
+          type: Number,
+          value: 50,
+          observer: '_volumeSliderValueObserver'
+        }
+      },
+      /**
+       * Defines the controller to send requests as
+       */
+      _controller: cast.CastManager.SENDER.LOCAL,
+
+      /**
+       * Last volume, used when muting to return to previous volume
+       */
+      _lastVolume: 50,
+
+      /**
+       * timeout id to cancel timeouts
+       */
+      _hideTimeoutHandler: null,
+      ready: function () {
+        // When a user interacts with the slider send a volume change request
+        this.$.slider_volume.addEventListener('change', function (event) {
+          event.preventDefault();
+          this._setVolume(this._volumeSliderValue / 100, this._controller);
+        }.bind(this));
+      },
+
+      /**
+       * Mouse over to show volume slider
+       */
+      _onMouseOver: function() {
+        this._showVolumeControlBar();
+        this._clearHideTimeout();
+      },
+
+      /**
+       * Mouse out to hide volume slider
+       */
+      _onMouseOut: function() {
+        this._setHideTimeout();
+      },
+
+      /**
+       * Toggles mute based on current volume
+       */
+      _toggleMute: function() {
+        if (this._volumeSliderValue === 0) {
+          this._setVolume(this._lastVolume / 100, this._controller);
+        } else {
+          this._lastVolume = this._volumeSliderValue;
+          this._setVolume(0, this._controller);
+        }
+      },
+
+      /**
+       * If the parent boolean changes update the controller field.  Cast - true means this volume
+       * controller should control the cast controller bar volume.  False means it controls the
+       * main player bar volume
+       *
+       * @param newVal {boolean} true if chromecast video volume controller
+       */
+      _parentControllerChanged: function (newVal, oldVal) {
+        this._controller = newVal ? cast.CastManager.SENDER.CASTCONTROLLER :
+            cast.CastManager.SENDER.LOCAL;
+      },
+
+      /**
+       * Observe the volume and update the slider appropriately
+       */
+      _volumeObserver: function (newVal, oldVal) {
+        this.set('_volumeSliderValue', Math.round(this.volume * 100));
+      },
+
+      /**
+       * When the slider value changes, if it reaches 0 change the icon to a muted icon.
+       */
+      _volumeSliderValueObserver: function (newVal, oldVal) {
+        if (this._volumeSliderValue === 0) {
+          this.$.button_volume_control.setAttribute('icon', 'av:volume-off');
+          this.$.button_volume.setAttribute('icon', 'av:volume-off');
+        } else {
+          this.$.button_volume_control.setAttribute('icon', 'av:volume-up');
+          this.$.button_volume.setAttribute('icon', 'av:volume-up');
+        }
+      },
+
+      /**
+       * Show the volume control bar and set a time out to hide it.
+       *
+       * @private
+       */
+      _showVolumeControlBar: function () {
+        this.$.volume_container.style.display = 'block';
+        window.setTimeout(function () {
+          this.$.volume_container.style.opacity = 1;
+        }.bind(this), 100);
+      },
+
+      /**
+       * Animates hiding the volume control bar
+       *
+       * @private
+       */
+      _hideVolumeControlBar: function () {
+        this.$.volume_container.style.opacity = 0;
+        this.async(function () {
+          this.$.volume_container.style.display = 'none';
+        }, 500);
+      },
+
+      /**
+       * Cancel the async task that hides the control bar
+       *
+       * @private
+       */
+      _clearHideTimeout: function () {
+        this.cancelAsync(this._hideTimeoutHandler);
+        this._hideTimeoutHandler = null;
+      },
+
+      /**
+       * Sets an async task to hide the control bar
+       *
+       * @private
+       */
+      _setHideTimeout: function () {
+        if (this._hideTimeoutHandler == null) {
+          this._hideTimeoutHandler = this.async(function () {
+            this._hideVolumeControlBar();
+          }, this.visibleDuration);
+        } else {
+          this.cancelAsync(this._hideTimeoutHandler);
+          this._hideTimeoutHandler = null;
+          this._setHideTimeout();
+        }
+      },
+
+      /**
+       * Fires a mediaActionEvent to update the volume
+       *
+       * @param volume {number} new volume
+       * @param sender {sender} sending element whether a cast controller or local video
+       *
+       * @private
+       */
+      _setVolume: function (volume, sender) {
+        this.fire('mediaActionEvent', {
+          type: 'setVolume',
+          args: [volume, sender]
+        });
+      }
+    });
+  </script>
+</dom-module>

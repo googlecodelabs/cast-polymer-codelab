@@ -1,0 +1,289 @@
+<!--
+Copyright 2014 Google Inc. All Rights Reserved.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+-->
+
+<link rel="import" href="../polymer/polymer.html">
+
+<link rel="import" href="../paper-ripple/paper-ripple.html">
+<link rel="import" href="../iron-icons/av-icons.html">
+<link rel="import" href="../iron-flex-layout/classes/iron-flex-layout.html">
+<link rel="import" href="../cast-manager-polymer/helper-behavior.html">
+<link rel="import" href="../cast-theme-polymer/cast-theme.html">
+
+<!--
+`cast-queue-element` represents each media item in the queue.  It automaticaly detects if the media
+item it represents is playing locally.
+
+Hovering over the element will expand it to show details of the queue item.
+
+Clicking the `X` will remove the item from the queue.
+
+This element requires a media item and the locally playing content
+
+Example
+
+    <cast-queue-element local-media="[[localMedia]]"
+                        media="[[media]]">
+    </cast-queue-element>
+
+### Styling
+
+The following custom properties are available for styling:
+----------------|-------------|----------
+`--background-color` | Theme background color | `#FFFFFF`
+`--paper-font-base` | Theme font | `Roboto`
+-->
+<dom-module id="cast-queue-element">
+  <style>
+    :host {
+      height: 70px;
+      width: 117px;
+      margin: 0;
+      display: inline-block;
+      @apply(--paper-font-base);
+      @apply(--transition-base-300);
+    }
+
+    #spacer {
+      height: 70px;
+      width: 107px;
+      margin: 0 5px;
+      overflow: hidden;
+      color: var(--text-color);
+
+      @apply(--transition-base-300);
+    }
+
+    :host(.expand) {
+      width: 310px;
+    }
+
+    :host(.expand) #spacer {
+      width: 300px;
+    }
+
+    #wrapper {
+      width: 300px;
+      height: 70px;
+      position: relative;
+    }
+
+    #ripple-wrapper {
+      width: 300px;
+      white-space: nowrap;
+      height: 70px;
+      position: relative;
+    }
+
+    #thumbnail {
+      height: 70px;
+      min-width: 108px;
+      @apply (--thumbnail)
+      @apply (--flex-center);
+      position: relative;
+    }
+
+    #details {
+      padding-left: 10px;
+      height: 70px;
+      width: 193px;
+      background: var(--background-color);
+    }
+
+    p {
+      margin: 0;
+    }
+
+    .studio {
+      @apply(--font-base-100-small);
+    }
+
+    .title {
+      @apply(--font-base-400-small);
+    }
+
+    .thumbnail-overlay {
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 100%;
+      height: 100%;
+      @apply(--thumbnail);
+      @apply(--flex-center);
+    }
+
+    #play.hidden {
+      opacity: 0;
+      filter: alpha(opacity=0);
+    }
+
+    #play {
+      opacity: .8;
+      filter: alpha(opacity=80);
+      fill: #ffffff;
+      --iron-icon-width: 80px;
+      --iron-icon-height: 80px;
+      @apply(--transition-base-300);
+    }
+
+    #currently_playing_overlay.hidden {
+      opacity: 0;
+      filter: alpha(opacity=0);
+    }
+
+    #currently_playing_overlay {
+      opacity: .8;
+      background-color: #000;
+      color: var(--selected-text-color);
+      @apply(--font-base-100-small);
+      @apply(--transition-base-300);
+    }
+
+    #close {
+      position: absolute;
+      right: 10px;
+      top: 5px;
+      color: var(--icon-secondary-fill-color);
+      --paper-icon-button: {
+        padding: 0;
+      };
+
+      --iron-icon-width:15px;
+      --iron-icon-height:15px;
+    }
+  </style>
+  <template>
+    <div id="spacer">
+      <div id="wrapper">
+        <div id="ripple-wrapper" class="layout horizontal start-justified">
+          <div id="thumbnail">
+            <div id="play_button_overlay" class="thumbnail-overlay">
+              <iron-icon id="play" icon="av:play-arrow" class="hidden"></iron-icon>
+            </div>
+            <div id="currently_playing_overlay" class="thumbnail-overlay hidden">
+              <p>[[ currentlyPlayingMessage ]]</p>
+            </div>
+            <div id="countdown_timer" class="thumbnail-overlay hidden">
+              <!--TODO(pying): add countdown timer here as well with iron signals-->
+            </div>
+          </div>
+          <div id="details" class="layout vertical center-justified">
+            <p class="title">[[_shorten(media.title, 20)]]</p>
+
+            <p class="studio">[[_shorten(media.studio, 20)]]</p>
+          </div>
+          <paper-ripple></paper-ripple>
+        </div>
+        <paper-icon-button id="close" icon="close" on-click="_queueRemoveItem"></paper-icon-button>
+      </div>
+    </div>
+  </template>
+
+
+  <script>
+    Polymer({
+      is: 'cast-queue-element',
+      properties: {
+        /**
+         * Media item to display
+         */
+        media: Object,
+
+        /**
+         * Currently playing local media item
+         */
+        localMedia: Object,
+
+        /**
+         * Message to display when media item matches what's currently playing
+         */
+        currentlyPlayingMessage: {
+          type: String,
+          value: 'Now Playing'
+        }
+      },
+      observers: [
+        '_mediaObserver(media)',
+        '_localMediaObserver(localMedia)'
+      ],
+      behaviors: [cast.HelperBehavior],
+      ready: function () {
+        this.addEventListener('click', function (event) {
+          this._queuePlayItem(this.media);
+        });
+
+        this.$.close.addEventListener('click', function() {
+          this._queueRemoveItem(this.media);
+        }.bind(this));
+
+        //Handle mouse over to indicate that clicking will play the video
+        this.addEventListener('mouseenter', function () {
+          this.classList.add('expand');
+
+          if (this.localMedia && this.media.queueId !== this.localMedia.queueId) {
+            this.$.play.classList.remove('hidden');
+          }
+        });
+
+        //Hide the expanded view when mouse leaves the element
+        this.addEventListener('mouseleave', function () {
+          this.$.play.classList.add('hidden');
+          this.classList.remove('expand');
+        });
+      },
+
+      /**
+       * Observes the locally playing media then checks if it matches media item
+       * on each media change.
+       *
+       * @param newVal updated locally playing media
+       * @private
+       */
+      _localMediaObserver: function (newVal) {
+        this._mediaChecker(this.media, newVal);
+      },
+
+      /**
+       * Observes the media item.  If it changes ie queue updates, it updates the thumbnail
+       * and checks the media item vs locally playing media.
+       *
+       * @param newVal updated media item
+       * @private
+       */
+      _mediaObserver: function (newVal) {
+        this._mediaChecker(newVal, this.localMedia);
+        this.$.thumbnail.style.backgroundImage = "url('" + newVal.thumbnailImageUrl + "')";
+        this.classList.remove('expand');
+      },
+
+      /**
+       * Checks the media item vs locally playing media to see if they match.  If they do,
+       * it displays the currently playing overlay.
+       *
+       * @param media media item
+       * @param localMedia currently playing media
+       * @private
+       */
+      _mediaChecker: function (media, localMedia) {
+        if (media && localMedia && media.queueId === localMedia.queueId) {
+          this.$.currently_playing_overlay.classList.remove('hidden');
+          this.$.play.classList.add('hidden');
+        } else {
+          this.$.currently_playing_overlay.classList.add('hidden');
+        }
+      },
+    });
+  </script>
+</dom-module>

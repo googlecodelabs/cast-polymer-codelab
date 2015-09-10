@@ -1,0 +1,370 @@
+<!--
+Copyright 2014 Google Inc. All Rights Reserved.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+-->
+
+<link rel="import" href="../polymer/polymer.html">
+<link rel="import" href="../iron-icons/hardware-icons.html">
+
+<link rel="import" href="../iron-signals/iron-signals.html">
+<link rel="import" href="../paper-styles/paper-styles.html">
+
+<link rel="import" href="../iron-flex-layout/classes/iron-flex-layout.html">
+<link rel="import" href="../iron-flex-layout/iron-flex-layout.html">
+<link rel="import" href="../cast-theme-polymer/cast-theme.html">
+
+<!--
+This element represents a status dialog.  It can show 2 elements:
+cast_enabled - notifies the user that the site supports cast
+preload - notifies the user that the current video is ending and the next video is loading
+
+This object observes castManager.castAvailable to determine if a castable device exists.  If
+one does it automatically displays the cast_enabled dialog.
+
+You can also explicitly display cast_enabled by sending a core signal media-action with
+action parameter castEnabled.
+
+To display the preload message, send a core signal media-action with the action parameter
+set as preload.  You'll also need to pass in the next media item in the queue and the time
+remaining before the next item starts.
+
+The preload message does not auto hide.  In order to hide the message, you'll need to send a
+loadFinished core signal media-action message.  If you're using CastManager and cast-video,
+the loadFinished is automatically sent when the video element finishes loading an item.-->
+<dom-module id="cast-dialog">
+  <style>
+    :host {
+      position: fixed;
+      top: 10%;
+      right: 5%;
+      height: 100px;
+      width: 400px;
+      overflow: visible;
+      display: none;
+      opacity: 0;
+      z-index: 20000;
+      @apply(--paper-font-base);
+      @apply(--transition-base-300);
+      @apply(--shadow-elevation-16dp);
+    }
+
+    #message_container {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      background-color: var(--dialog-color);
+    }
+
+    #message_container > div {
+      height: 100%;
+      width: 100%;
+    }
+
+    .hidden {
+      display: none;
+    }
+
+    #preload > p {
+      color: var(--selected-text-color);
+      margin: 5px 0 3px 5px;
+      @apply(--font-base-400);
+    }
+
+    .message {
+      position: absolute;
+      left: 0;
+      top: 0;
+    }
+
+    #cast_enabled p {
+      color: var(--selected-text-color);
+      @apply(--font-base-400);
+      margin: 0 10px 0 10px;
+    }
+
+    #cast-icon {
+      height: 80px;
+      width: 80px;
+      color: var(--icon-fill-color);
+      margin-right: 10px;
+    }
+
+    #thumbnail {
+      height: 65px;
+      width: 33%;
+      display: inline-block;
+      margin: 0;
+      position: relative;
+      @apply(--thumbnail);
+    }
+
+    #play.hidden {
+      opacity: 0;
+      filter: alpha(opacity=0);
+    }
+
+    #play {
+      opacity: .8;
+      filter: alpha(opacity=80);
+      width: 80px;
+      height: 80px;
+      fill: var(--icon-fill-color);
+      display: block;
+      @apply(--transition-base-300);
+    }
+
+    .thumbnail-overlay {
+      display: flex;
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 100%;
+      height: 100%;
+    }
+
+    #details {
+      padding-left: 10px;
+      height: 65px;
+      flex-grow: 2;
+      margin: 0;
+      color: var(--text-color);
+    }
+
+    .studio {
+      @apply(--font-base-100-small);
+      margin: 0;
+      padding: 0;
+    }
+
+    .title {
+      @apply(--font-base-400-slightly-small);
+      margin: 0;
+      padding: 0;
+    }
+
+    #media_item {
+      display: flex;
+      flex-direction: row;
+      height: 65px;
+      margin: 0 5px 5px 5px;
+      background-color: var(--background-color);
+    }
+
+    br {
+      line-height:1.4em;
+    }
+
+  </style>
+  <template>
+    <div id="message_container" class="message">
+      <div id="cast_enabled" class="horizontal center justified hidden">
+        <p><span class="title">This site is Cast enabled.</span><br />
+          <span class="studio">Start Casting by clicking on the Cast icon.</span></p>
+        <iron-icon id="cast-icon" icon="hardware:cast"></iron-icon>
+      </div>
+      <div id="preload" class="message vertical hidden">
+        <p>Coming up in <span>[[ _round(countdownToNextMediaItem) ]]</span> seconds:</p>
+        <div id="media_item" class="layout horizontal">
+          <div id="thumbnail">
+            <div id="play_button_overlay" class="thumbnail-overlay layout horizontal center-center">
+              <iron-icon id="play" icon="av:play-arrow" class="hidden"></iron-icon>
+            </div>
+          </div>
+          <div id="details" class="layout vertical center-justified">
+            <p class="title">
+              <span>[[_shorten(nextQueueMediaItem.title, 30)]]</span>
+            </p>
+            <p class="studio">
+              <span>[[_shorten(nextQueueMediaItem.studio, 30)]]</span>
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+    <iron-signals on-iron-signal-media-action="_mediaActionHandler"></iron-signals>
+  </template>
+  <script>
+    Polymer({
+      is: 'cast-dialog',
+      properties: {
+        castAvailable: {
+          type: Boolean,
+          observer: '_castAvailableObserver'
+        },
+
+        /**
+         * Countdown number to display
+         */
+        countdownToNextMediaItem: {
+          type: Number,
+          observer: '_countdownObserver'
+        },
+
+        /**
+         * Media details to display
+         */
+        nextQueueMediaItem: {
+          type:Object,
+          observer: '_nextQueueMediaItemObserver'
+        },
+
+        /**
+         * Duration to show the cast_enabled message
+         */
+        visibleDuration: {
+          type: Number,
+          value: 3000
+        }
+      },
+
+      /**
+       * Interval Id to hide dialog after displaying cast_enabled message
+       */
+      _hideHandle: null,
+      behaviors: [cast.HelperBehavior],
+      ready: function () {
+        //When user mouses over the media element display play button to indication potential action
+        this.$.media_item.addEventListener('mouseover', function (event) {
+          this.$.play.classList.remove('hidden');
+          event.stopPropagation();
+        }.bind(this));
+        this.$.media_item.addEventListener('mouseout', function (event) {
+          this.$.play.classList.add('hidden');
+          event.stopPropagation();
+        }.bind(this));
+        //Play media item when user clicks on media element
+        this.$.media_item.addEventListener('click', function () {
+          this._queuePlayItem(this.nextQueueMediaItem);
+          this.hide();
+        }.bind(this));
+      },
+
+      /**
+       * Observes when a cast device is available.  If a device is available, shows the cast enabled
+       * message
+       */
+      _castAvailableObserver: function (newVal, oldVal) {
+        if (this.castAvailable) {
+          //Show dialog
+          this.show();
+          //Show cast enabled specific content
+          this.showCastEnabled();
+        } else {
+          this.hide();
+        }
+      },
+
+      /**
+       * Shows the dialog
+       */
+      show: function () {
+        if(this._hideHandle) {
+          this.cancelAsync(this._hideHandle);
+        }
+        this.style.display = 'block';
+        this.async(function () {
+          this.style.opacity = 1;
+        }.bind(this), 100);
+      },
+
+      /**
+       * Hides the dialog
+       */
+      hide: function () {
+        this.style.opacity = 0;
+        this._hideHandle = this.async(function () {
+          this.style.display = 'none';
+          this.hideAllLayers();
+        }, 600);
+      },
+
+      /**
+       * Start the hide timeout
+       */
+      _setHideTimeout: function () {
+        if (this._hideHandle == null) {
+          this._hideHandle = this.async(function () {
+            this.hide();
+          }.bind(this), this.visibleDuration);
+        } else {
+          this.cancelAsync(this._hideHandle);
+          this._hideHandle = null;
+          this._setHideTimeout();
+        }
+      },
+
+      /**
+       * Helper function to hide all message layers when hiding
+       * the dialog.
+       */
+      hideAllLayers: function () {
+        this.$.cast_enabled.classList.remove('layout');
+        this.$.preload.classList.remove('layout');
+      },
+
+      /**
+       * Show the preload dialog notification
+       */
+      _countdownObserver: function () {
+        if(this.countdownToNextMediaItem && this.style.display !== 'block') {
+          this.$.preload.classList.add('layout');
+          this.show();
+        }
+      },
+
+      /**
+       * Updates the details of the media item
+       */
+      _nextQueueMediaItemObserver: function() {
+        if(this.nextQueueMediaItem) {
+          this.$.thumbnail.style.backgroundImage = 'url(\'' +
+              this.nextQueueMediaItem.thumbnailImageUrl + '\')';
+        }
+      },
+
+      /**
+       * Displays the cast enabled dialog
+       */
+      showCastEnabled: function () {
+        //Set cast_enabled display to flex
+        this.$.cast_enabled.classList.add('layout');
+        //Start hide timer
+        this._setHideTimeout();
+      },
+
+      _round: function(time) {
+        return Math.round(time);
+      },
+
+      /**
+       * core-signal action handler
+       */
+      _mediaActionHandler: function (e, data, sender) {
+        switch (data.action) {
+          case 'mediaLoaded':
+            //If it's not displaying the cast_enabled display
+            if (this.$.preload.classList.contains('layout')) {
+              this.hide();
+            }
+            break;
+          case 'hideDialog':
+            if (this.$.preload.classList.contains('layout')) {
+              this.hide();
+            }
+            break;
+        }
+      }
+    });
+  </script>
+</dom-module>

@@ -1,0 +1,158 @@
+<!--
+Copyright 2014 Google Inc. All Rights Reserved.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+-->
+
+<link rel="import" href="../polymer/polymer.html">
+
+<!--
+An Object representing a media item in the queue.
+
+Takes title, url, thumbnailImageUrl, studio, description as constructor params.
+
+Example:
+    var mediaItem = new cast.MediaItem({
+      title: "Casting To The Future",
+      url: "https://commondatastorage.googleapis.com/gtv-video…ucket/sample/GoogleIO-2014-CastingToTheFuture.mp4",
+      thumbnailImageUrl: "//commondatastorage.googleapis.com/gtv-videos-bucket/sample/images_480x270/ToTheFuture2-480x270.jpg",
+      studio: "Google IO - 2014",
+      description: "Fusce id nisi turpis. Praesent viverra bibendum se…sque. Maecenas pretium cursus lectus id volutpat."
+    });
+
+Properties need to be modified by set methods to notify elements of updates.
+-->
+<script>
+  var cast = window.cast || {};
+  (function () {
+    'use strict';
+
+    var MediaItem = Polymer({
+      is: 'media-item',
+      properties: {
+
+        /**
+         * Title of content
+         */
+        title: {
+          type: String,
+          notify: true
+        },
+
+        /**
+         * Url of content
+         */
+        url: {
+          type: String,
+          notify: true
+        },
+
+        /**
+         * Thumbnail image to display
+         */
+        thumbnailImageUrl: {
+          type: String,
+          notify: true
+        },
+
+        /**
+         * Creator or secondary title
+         */
+        studio: {
+          type: String,
+          notify: true
+        },
+
+        /**
+         * Description of content
+         */
+        description: {
+          type: String,
+          notify: true
+        },
+
+        /**
+         * Unique Id of element for queue use
+         */
+        queueId: {
+          type: Number,
+          notify: true
+        },
+
+        state: {
+          type: Number,
+          notify: true,
+          value: 0 // Default state is stopped
+        },
+
+        duration: {
+          type: Number,
+          notify: true,
+          value: 0
+        }
+      },
+
+      /**
+       * Constructor
+       */
+      factoryImpl: function (media) {
+        this.title = media.title;
+        this.url = media.url;
+        this.thumbnailImageUrl = media.thumbnailImageUrl;
+        this.studio = media.studio;
+        this.description = media.description;
+        this.queueId = media.queueId;
+        this.duration = media.duration;
+      },
+
+      /**
+       * Sets the queue Id of the element
+       */
+      setQueueId: function (newId) {
+        this.set('queueId', newId);
+      },
+
+      setState: function (newState) {
+        this.set('state', newState);
+      },
+
+      /**
+       * Sets the content duration
+       *
+       * @param duration {number}
+       */
+      setDuration: function (newDuration) {
+        this.set('duration', newDuration);
+      },
+
+      /**
+       * Converts a percentage to duration of video content time
+       *
+       * @param floatVal {number}
+       * @returns {number}
+       */
+      floatToTime: function (floatVal) {
+        return floatVal * this.duration;
+      }
+    });
+
+    MediaItem.STATE = {
+      "PAUSED": 0, //has started playing but is currently paused
+      "PLAYING": 1, //currently playing
+      "STOPPED": 2, //has never started playing
+      'BUFFERING': 3 //buffering
+    };
+
+    cast.MediaItem = MediaItem;
+  })();
+</script>

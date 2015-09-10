@@ -1,0 +1,571 @@
+<!--
+Copyright 2014 Google Inc. All Rights Reserved.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+-->
+<link rel="import" href="../polymer/polymer.html">
+<link rel="import" href="../iron-signals/iron-signals.html">
+<link rel="import" href="../paper-spinner/paper-spinner.html">
+<link rel="import" href="../cast-player-bar-polymer/cast-player-bar.html">
+<link rel="import" href="../cast-manager-polymer/helper-behavior.html">
+
+<link rel="import" href="../iron-flex-layout/classes/iron-flex-layout.html">
+<link rel="import" href="../cast-theme-polymer/cast-theme.html">
+
+<!--
+This element handles video functionality.
+
+An interval updates localMedia.currentTime every second to match the currentTime time in the video.
+
+To play/pause, this element listens for core signal events and then determines the appropriate
+action based on the sender.
+
+Before a video starts playing, an image overlay is displayed if it has one.
+
+The element includes chromecast-player-bar as the media controller.
+
+### Example:
+
+    <cast-manager queue-manager="queue-manager"
+                app-id="4F8B3483"
+                cast-available="{{castAvailable}}"
+                connection-status="{{connectionStatus}}"
+                local-media="{{localMedia}}"
+                queue="{{queue}}"
+                volume="{{volume}}"
+                has-cast-media="{{hasCastMedia}}"
+                show-queue="{{showQueue}}"
+                cast-device-name="{{castDeviceName}}"
+                current-time="{{currentTime}}"
+                is-fullscreen="{{isFullscreen}}"
+                show-spinner="[[showSpinner]]">
+      <cast-video id="video"
+                        local-media="{{localMedia}}"
+                        volume="{{volume}}"
+                        current-time="{{currentTime}}"
+                        is-fullscreen="{{isFullscreen}}"
+                        queue="[[queue]]"
+                        cast-available="[[castAvailable]]"
+                        connection-status="[[connectionStatus]]"
+                        show-spinner="[[showSpinner]]"
+                        cast-device-name="[[castDeviceName]]"></cast-video>
+    </cast-manager>
+-->
+<dom-module id="cast-video">
+  <style>
+    :host {
+      height: 100%;
+      width: 100%;
+      display: block;
+      position: relative;
+      background-color: var(--video-background-color);
+    }
+
+    .overlay-content {
+      height: 100%;
+      width: 100%;
+      position: absolute;
+      left: 0;
+      top: 0;
+    }
+
+    cast-player-bar {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      width: 100%;
+      opacity: .6;
+      z-index: 100;
+      @apply(--transition-base-300);
+    }
+
+    video {
+      background-color: var(--video-background-color);
+    }
+
+    #spinner_overlay {
+      z-index: 100;
+    }
+
+    paper-spinner {
+      height: 100px;
+      width: 100px;
+      position: relative;
+      z-index: 100;
+      display: inline-block;
+    }
+
+    #cast_label {
+      position: absolute;
+      bottom: 20%;
+      width: 100%;
+      z-index: 1000;
+      @apply(--paper-font-base);
+      @apply(--font-base-100-slightly-large);
+      color: var(--selected-text-color);
+      text-align: center;
+    }
+
+    #text_overlay {
+      @apply(--transition-base-300);
+      z-index: 5;
+    }
+
+    .hidden {
+      opacity: 0;
+      filter: alpha(opacity=0);
+    }
+
+    .gradient {
+      /* FF3.6+ */
+      background: -webkit-gradient(linear, left top, left bottom, color-stop(0%, rgba(0, 0, 0, 0.01)), color-stop(70%, rgba(0, 0, 0, 0.16)), color-stop(100%, rgba(0, 0, 0, 1))); /* Chrome,Safari4+ */
+      background: -webkit-linear-gradient(top, rgba(0, 0, 0, 0.01) 0%, rgba(0, 0, 0, 0.16) 70%, rgba(0, 0, 0, 1) 100%); /* Chrome10+,Safari5.1+ */
+      /* Opera 11.10+ */
+      /* IE10+ */
+      background: linear-gradient(to bottom, rgba(0, 0, 0, 0.01) 0%, rgba(0, 0, 0, 0.16) 70%, rgba(0, 0, 0, 1) 100%); /* W3C */
+      filter: progid:DXImageTransform.Microsoft.gradient(startColorstr='rgba(3, 0, 0, 0)', endColorstr='#000000', GradientType=0); /* IE6-9 */
+    }
+  </style>
+  <template>
+
+    <div id="text_overlay"
+         class="overlay-content gradient"
+         hidden$="[[!_isConnected(connectionStatus)]]">
+      <span id="cast_label"></span>
+    </div>
+
+    <div id="spinner_overlay" class="overlay-content layout horizontal center-center">
+      <paper-spinner active="[[showSpinner]]"></paper-spinner>
+    </div>
+
+    <video id="video_content" class="overlay-content">
+    </video>
+    <cast-player-bar id="player_bar"
+                     local-media="[[localMedia]]"
+                     current-time="[[currentTime]]"
+                     volume="[[volume]]"
+                     cast-available="[[castAvailable]]"
+                     connection-status="[[connectionStatus]]"
+                     queue-enabled="[[_isQueueEnabled(queue)]]"
+                     is-fullscreen="[[isFullscreen]]"></cast-player-bar>
+
+    <iron-signals on-iron-signal-media-action="_mediaActionHandler"></iron-signals>
+  </template>
+  <script>
+    Polymer({
+      is: 'cast-video',
+      properties: {
+
+        /**
+         * Locally playing media
+         */
+        localMedia: {
+          type: Object,
+          notify: true,
+          observer: '_localMediaObserver'
+        },
+
+        /**
+         * Local queue used when determining auto play
+         */
+        queue: {
+          type: Object
+        },
+
+        /**
+         * Volume of media
+         */
+        volume: {
+          type: Number,
+          notify: true
+        },
+
+        /**
+         * Boolean describing if a cast device is available
+         */
+        castAvailable: Boolean,
+
+        /**
+         * Number describing the current connection status
+         */
+        connectionStatus: {
+          type: Number,
+          observer: '_connectionStatusObserver'
+        },
+
+        /**
+         * Local media current time
+         */
+        currentTime: {
+          type: Number,
+          notify: true
+        },
+
+        /**
+         * Boolean describing if the video is full screened
+         */
+        isFullscreen: {
+          type: Boolean,
+          notify: true
+        },
+
+        /**
+         * Boolean describing whether to show or hide the spinner
+         */
+        showSpinner: {
+          type: Boolean,
+          value: false
+        },
+
+        /**
+         * Receiver device name
+         */
+        castDeviceName: {
+          type: String,
+          observer: '_castDeviceNameObserver'
+        },
+
+        /**
+         * Time to display player bar before auto hiding
+         */
+        visibleDuration: {
+          type: Number,
+          value: 3000
+        },
+
+        /**
+         * Media state to update play/pause icon button
+         */
+        _playerState: {
+          type: Number
+        },
+
+        /**
+         * Allows you to provide just a src to display like a video tag
+         */
+        src: {
+          type:String,
+          observer: '_srcObserver'
+        }
+      },
+      /**
+       * Boolean to determine of next video should auto play
+       */
+      _autoPlayTrigger: false,
+
+      /**
+       * Async task handle for hiding player bar
+       */
+      _hideHandle: null,
+
+      /**
+       * Interval Id to poll currently playing media time
+       */
+      _intervalId: null,
+
+      /**
+       * Interval poll rate
+       */
+      _refreshIntervalMs: 1000,
+      behaviors: [cast.HelperBehavior],
+      ready: function () {
+        var ev;
+        if (this.requestFullscreen) {
+          ev = 'fullscreenchange';
+        } else if (this.msRequestFullscreen) {
+          ev = 'msfullscreenchange';
+        } else if (this.mozRequestFullScreen) {
+          ev = 'mozfullscreenchange';
+        } else if (this.webkitRequestFullscreen) {
+          ev = 'webkitfullscreenchange';
+        }
+
+        //Handle full screen exit.
+        document.addEventListener(ev, function (event) {
+          var fullscreenElement = document.fullscreenElement || document.mozFullScreenElement || document.webkitFullscreenElement;
+          if (fullscreenElement === null) {
+            this._exitFullscreen();
+          }
+        }.bind(this));
+
+        //Catch video loaded event
+        this.$.video_content.addEventListener('loadeddata', this._onMediaLoaded.bind(this));
+
+        //When content ends load the next item in queue
+        this.$.video_content.addEventListener('ended', function () {
+          //If a queue is defined, load the next item
+          if(this.queue) {
+            this._queueLoadNextItem();
+          }
+          this._autoPlayTrigger = true;
+        }.bind(this));
+
+        //Add an event listener to handle click events on the video element
+        this.addEventListener('click', function () {
+          if (this._hideHandle != null) {
+            this.cancelAsync(this._hideHandle);
+          }
+          if (this._playerState !== cast.MediaItem.STATE.PLAYING) {
+            this._play(cast.CastManager.SENDER.LOCAL);
+          } else {
+            this._pause(cast.CastManager.SENDER.LOCAL);
+          }
+        });
+
+        // Hide the bar on mouse out
+        this.addEventListener('mouseout', function () {
+          this._setHideTimeout();
+        });
+
+        // Show player bar when mouse moves
+        this.addEventListener('mousemove', function () {
+          this.showPlayerBar();
+        });
+
+        // Start timeout to hide player bar
+        this._setHideTimeout();
+      },
+
+      /**
+       * When the media is loaded update the localMedia details.
+       */
+      _onMediaLoaded: function () {
+        this._loadFinished();
+        this.localMedia.setDuration(this.$.video_content.duration);
+
+        //If not casting automatically play the video when it's loaded
+        if (this._autoPlayTrigger  && this.connectionStatus !==
+            cast.CastManager.CONNECTION_STATUS.CONNECTED) {
+          this._autoPlayTrigger = false;
+          this._play(cast.CastManager.SENDER.LOCAL);
+        }
+      },
+
+      /**
+       * Observe the connection status and update video ui when connected
+       */
+      _connectionStatusObserver: function (newVal, oldVal) {
+        if (this._isConnected(this.connectionStatus)) {
+          this.pause();
+          this.$.cast_label.innerHTML = 'Casting to: ' + this.castDeviceName;
+        }
+      },
+
+      /**
+       * Pause the video
+       */
+      pause: function () {
+        this.$.video_content.pause();
+        if (this._intervalId !== null) {
+          window.clearInterval(this._intervalId);
+          this._intervalId = null;
+        }
+        this.localMedia.setState(cast.MediaItem.STATE.PAUSED);
+      },
+
+      /**
+       * Handles iron events fired by cast manager
+       *
+       * @param e
+       * @param data event information
+       * @param sender
+       */
+      _mediaActionHandler: function (e, data, sender) {
+        //If not currently casting take action on the video
+        if (!this._isConnected(this.connectionStatus)) {
+          switch (data.action) {
+            case 'seek':
+              this.$.video_content.currentTime = data.currentTime;
+              this.set('currentTime', this.$.video_content.currentTime);
+              break;
+            case 'play':
+              this.$.video_content.play();
+              //Create an interval to update the localMedia currentTime
+              if (this._intervalId === null) {
+                this._intervalId = window.setInterval(function () {
+                  this.set('currentTime', this.$.video_content.currentTime);
+                }.bind(this), this._refreshIntervalMs);
+              }
+              this.localMedia.setState(cast.MediaItem.STATE.PLAYING);
+              break;
+            case 'pause':
+              this.pause();
+              break;
+            case 'volume':
+              this.$.video_content.volume = data.volume;
+              this.set('volume', this.$.video_content.volume);
+              break;
+            case 'fullscreen':
+              var elem = this;
+              if (elem.requestFullscreen) {
+                elem.requestFullscreen();
+              } else if (elem.msRequestFullscreen) {
+                elem.msRequestFullscreen();
+              } else if (elem.mozRequestFullScreen) {
+                elem.mozRequestFullScreen();
+              } else if (elem.webkitRequestFullscreen) {
+                elem.webkitRequestFullscreen();
+              }
+              this.set('isFullscreen', true);
+              break;
+            case 'exitFullscreen':
+              if (document.exitFullscreen) {
+                document.exitFullscreen();
+              } else if (document.msExitFullscreen) {
+                document.msExitFullscreen();
+              } else if (document.mozCancelFullScreen) {
+                document.mozCancelFullScreen();
+              } else if (document.webkitExitFullscreen) {
+                document.webkitExitFullscreen();
+              }
+              this.set('isFullscreen', false);
+              break;
+            case 'autoPlayTrigger':
+              this.set('_autoPlayTrigger', data.value);
+              break;
+            case 'loadMedia':
+              this.set('currentTime', 0);
+              // If the video is new load it, otherwise set the time back to 0
+              if (this.$.video_content.src !== data.url) {
+                this.$.video_content.poster = data.thumbnailImageUrl;
+                this.$.video_content.src = data.url;
+              } else {
+                this.$.video_content.currentTime = 0;
+                this._onMediaLoaded();
+              }
+              // If local single video repeat auto play the video
+              if (this.queue && this.queue.repeatMode ===
+              cast.QueueManager.REPEAT_MODE.REPEAT_SINGLE) {
+                this._play(cast.CastManager.SENDER.LOCAL);
+              }
+              break;
+          }
+        } else {
+          //If casting only handle the load event and show poster info
+          switch (data.action) {
+            case 'loadMedia':
+              this._autoPlayTrigger = false;
+              this.$.video_content.poster = data.thumbnailImageUrl;
+              this.$.video_content.src = data.url;
+              break;
+          }
+        }
+      },
+
+      /**
+       * Sets a hide timer to minimize the controller bar
+       */
+      _setHideTimeout: function () {
+        if (this._hideHandle === null) {
+          this._hideHandle = this.async(function () {
+            this.hidePlayerBar();
+          }.bind(this), this.visibleDuration);
+        } else {
+          this.cancelAsync(this._hideHandle);
+          this._hideHandle = null;
+          this._setHideTimeout();
+        }
+      },
+
+      /**
+       * Show the player bar
+       */
+      showPlayerBar: function () {
+        this.$.player_bar.classList.remove('hidden');
+        this.style.cursor = 'auto';
+
+        if (this._hideHandle !== null) {
+          this.cancelAsync(this._hideHandle);
+        }
+        this._hideHandle = null;
+        //  Set timeout for inactivity
+        this._setHideTimeout();
+      },
+
+      /**
+       * Hide the player bar
+       */
+      hidePlayerBar: function () {
+        this.$.player_bar.classList.add('hidden');
+        this.style.cursor = 'none';
+        if (this._hideHandle !== null) {
+          this.cancelAsync(this._hideHandle);
+        }
+      },
+
+      /**
+       * Observes src and updates media with content
+       */
+      _srcObserver: function(newVal, oldVal) {
+        if (src) {
+          var srcMedia = {
+            title: '',
+            url: src,
+            thumbnailImageUrl: '',
+            studio: '',
+            description: ''
+          };
+          this._setLocalMedia(srcMedia);
+        }
+      },
+
+      /**
+       * Enables the queue button in the player bar when a queue is defined
+       */
+      _isQueueEnabled: function(queue) {
+        return (queue !== undefined && queue !== null)
+      },
+
+      /**
+       * When video has loaded, fire a finished loading event
+       */
+      _loadFinished: function() {
+        this.fire('mediaActionEvent', {
+          type: 'mediaLoaded'
+        });
+      },
+
+      /**
+       * Syncs changes from localMedia.state to local property _playerState.
+       *
+       * @private
+       */
+      _notifyStateChanged: function () {
+        this.set('_playerState', this.localMedia.state);
+      },
+
+      /**
+       * Updates the device name when it changes setting innerHTML since using the template doesn't
+       * entity decode.
+       */
+      _castDeviceNameObserver: function(newVal, oldVal) {
+        this.$.cast_label.innerHTML = this._shorten('Casting to: ' + this.castDeviceName);
+      },
+
+      /**
+       * Syncs changes between cast manager local media and this elements properties
+       * @param newVal
+       * @param oldVal
+       * @private
+       */
+      _localMediaObserver: function (newVal, oldVal) {
+        if (newVal) {
+          this.listen(this.localMedia, 'state-changed', '_notifyStateChanged');
+        }
+        if (oldVal) {
+          this.unlisten(oldVal, 'state-changed', '_notifyStateChanged');
+        }
+      }
+    });
+  </script>
+</dom-module>
